@@ -1,5 +1,533 @@
 module CodeComplexity
 
-greet() = print("Hello World!")
+export cyclomatic_complexity,
+    complexity_report,
+    file_complexity,
+    directory_complexity,
+    package_complexity,
+    FunctionComplexity,
+    FileComplexity
+
+"""
+    FunctionComplexity
+
+Holds complexity information for a single function.
+
+# Fields
+- `name::String`: The name of the function
+- `complexity::Int`: The cyclomatic complexity value
+- `line::Int`: The line number where the function is defined (0 if unknown)
+"""
+struct FunctionComplexity
+    name::String
+    complexity::Int
+    line::Int
+end
+
+"""
+    FileComplexity
+
+Holds complexity information for a file.
+
+# Fields
+- `path::String`: The file path
+- `functions::Vector{FunctionComplexity}`: Complexity info for each function in the file
+- `total_complexity::Int`: Sum of all function complexities
+"""
+struct FileComplexity
+    path::String
+    functions::Vector{FunctionComplexity}
+    total_complexity::Int
+end
+
+function FileComplexity(path::String, functions::Vector{FunctionComplexity})
+    total = sum(f.complexity for f in functions; init=0)
+    FileComplexity(path, functions, total)
+end
+
+"""
+    cyclomatic_complexity(expr) -> Int
+
+Calculate the cyclomatic complexity of a Julia expression (AST).
+
+The cyclomatic complexity is calculated by counting decision points in the code
+and adding 1. Decision points include:
+- `if`/`elseif` statements
+- `for` loops
+- `while` loops  
+- `try`/`catch` blocks
+- Short-circuit operators (`&&`, `||`)
+- Ternary operator (`? :`)
+- `@goto` statements
+
+# Arguments
+- `expr`: A Julia expression (obtained via `Meta.parse` or `quote`)
+
+# Returns
+- `Int`: The cyclomatic complexity value (minimum 1)
+
+# Example
+```julia
+expr = Meta.parse(\"\"\"
+function foo(x)
+    if x > 0
+        return x
+    else
+        return -x
+    end
+end
+\"\"\")
+cyclomatic_complexity(expr)  # Returns 2
+```
+"""
+function cyclomatic_complexity(expr)
+    complexity = _get_complexity(expr)
+    return complexity + 1
+end
+
+"""
+    cyclomatic_complexity(code::AbstractString) -> Int
+
+Calculate the cyclomatic complexity of Julia code given as a string.
+
+# Example
+```julia
+code = \"\"\"
+function foo(x)
+    if x > 0
+        return x
+    else
+        return -x
+    end
+end
+\"\"\"
+cyclomatic_complexity(code)  # Returns 2
+```
+"""
+function cyclomatic_complexity(code::AbstractString)
+    expr = Meta.parse(code)
+    return cyclomatic_complexity(expr)
+end
+
+# Internal function to recursively calculate complexity
+function _get_complexity(expr)
+    complexity = 0
+    
+    if expr isa Expr
+        head = expr.head
+        args = expr.args
+        
+        if head === :if || head === :elseif
+            # if/elseif adds 1 for the condition
+            complexity += 1
+            # Recurse into all branches
+            for arg in args
+                complexity += _get_complexity(arg)
+            end
+            
+        elseif head === :for
+            # for loop adds 1
+            complexity += 1
+            for arg in args
+                complexity += _get_complexity(arg)
+            end
+            
+        elseif head === :while
+            # while loop adds 1
+            complexity += 1
+            for arg in args
+                complexity += _get_complexity(arg)
+            end
+            
+        elseif head === :try
+            # try block: count catch clauses
+            # Structure: try body [catch var catchbody] [finally finallybody]
+            for (i, arg) in enumerate(args)
+                if arg isa Expr
+                    complexity += _get_complexity(arg)
+                elseif arg === false
+                    # This is the catch variable position when there's no catch
+                    continue
+                elseif arg isa Symbol && i == 2
+                    # catch variable - check if there's a catch block
+                    # If there's a catch block, add 1 for the exception handler
+                    if length(args) >= 3 && args[3] !== false
+                        complexity += 1
+                    end
+                end
+            end
+            # Handle the case where catch exists (position 3 in args)
+            if length(args) >= 3 && args[3] !== false && !(args[2] isa Symbol)
+                complexity += 1
+            end
+            
+        elseif head === :catch
+            # Explicit catch block adds 1
+            complexity += 1
+            for arg in args
+                complexity += _get_complexity(arg)
+            end
+            
+        elseif head === :&&
+            # Short-circuit AND adds 1
+            complexity += 1
+            for arg in args
+                complexity += _get_complexity(arg)
+            end
+            
+        elseif head === :||
+            # Short-circuit OR adds 1
+            complexity += 1
+            for arg in args
+                complexity += _get_complexity(arg)
+            end
+            
+        elseif head === :? || head === :if  # Ternary is sometimes parsed as :if
+            # Ternary operator adds 1 (already covered by :if above)
+            complexity += 1
+            for arg in args
+                complexity += _get_complexity(arg)
+            end
+            
+        elseif head === :macrocall
+            # Check for @goto which adds a branch
+            if length(args) > 0 && args[1] === Symbol("@goto")
+                complexity += 1
+            end
+            # Recurse into macro arguments (skip the macro name and line number)
+            for arg in args[3:end]
+                complexity += _get_complexity(arg)
+            end
+            
+        else
+            # For all other expression types, recurse into children
+            for arg in args
+                complexity += _get_complexity(arg)
+            end
+        end
+    end
+    
+    return complexity
+end
+
+"""
+    complexity_report(code::AbstractString) -> Vector{FunctionComplexity}
+
+Analyze Julia code and return complexity information for each function defined.
+
+# Arguments
+- `code::AbstractString`: Julia source code as a string
+
+# Returns
+- `Vector{FunctionComplexity}`: A vector of complexity info for each function
+
+# Example
+```julia
+code = \"\"\"
+function foo(x)
+    if x > 0
+        return x
+    end
+    return 0
+end
+
+function bar(x, y)
+    return x + y
+end
+\"\"\"
+report = complexity_report(code)
+# Returns 2 FunctionComplexity objects
+```
+"""
+function complexity_report(code::AbstractString)
+    expr = Meta.parse("begin\n$code\nend")
+    return _extract_functions(expr)
+end
+
+# Extract function definitions and their complexities
+function _extract_functions(expr, results::Vector{FunctionComplexity}=FunctionComplexity[])
+    if expr isa Expr
+        if expr.head === :function || expr.head === :(=)
+            # Check if this is a function definition
+            name, is_func = _get_function_name(expr)
+            if is_func
+                comp = cyclomatic_complexity(expr)
+                line = _get_line_number(expr)
+                push!(results, FunctionComplexity(name, comp, line))
+            else
+                # Not a function, recurse into children
+                for arg in expr.args
+                    _extract_functions(arg, results)
+                end
+            end
+        elseif expr.head === :->
+            # Anonymous function / lambda
+            comp = cyclomatic_complexity(expr)
+            line = _get_line_number(expr)
+            push!(results, FunctionComplexity("<anonymous>", comp, line))
+        elseif expr.head === :macro
+            # Macro definition
+            if length(expr.args) >= 1
+                name = "@" * string(_extract_name(expr.args[1]))
+                comp = cyclomatic_complexity(expr)
+                line = _get_line_number(expr)
+                push!(results, FunctionComplexity(name, comp, line))
+            end
+        else
+            # Recurse into children
+            for arg in expr.args
+                _extract_functions(arg, results)
+            end
+        end
+    end
+    return results
+end
+
+# Get function name from a function definition expression
+function _get_function_name(expr)
+    if expr.head === :function
+        if length(expr.args) >= 1
+            return string(_extract_name(expr.args[1])), true
+        end
+    elseif expr.head === :(=)
+        # Short form function: f(x) = ...
+        if length(expr.args) >= 1 && expr.args[1] isa Expr
+            if expr.args[1].head === :call || expr.args[1].head === :where
+                return string(_extract_name(expr.args[1])), true
+            end
+        end
+    end
+    return "", false
+end
+
+# Extract the name from a function signature
+function _extract_name(expr)
+    if expr isa Symbol
+        return expr
+    elseif expr isa Expr
+        if expr.head === :call && length(expr.args) >= 1
+            return _extract_name(expr.args[1])
+        elseif expr.head === :where && length(expr.args) >= 1
+            return _extract_name(expr.args[1])
+        elseif expr.head === :curly && length(expr.args) >= 1
+            return _extract_name(expr.args[1])
+        elseif expr.head === :(::) && length(expr.args) >= 1
+            return _extract_name(expr.args[1])
+        elseif expr.head === :(.) && length(expr.args) >= 2
+            # Qualified name like Module.func
+            return Symbol(string(_extract_name(expr.args[1])), ".", string(expr.args[2].value))
+        end
+    end
+    return :unknown
+end
+
+# Get line number from expression if available
+function _get_line_number(expr)
+    if expr isa Expr
+        for arg in expr.args
+            if arg isa LineNumberNode
+                return arg.line
+            elseif arg isa Expr && arg.head === :line && length(arg.args) >= 1
+                return arg.args[1]
+            end
+        end
+        # Recurse to find line number
+        for arg in expr.args
+            line = _get_line_number(arg)
+            if line > 0
+                return line
+            end
+        end
+    end
+    return 0
+end
+
+"""
+    file_complexity(filepath::AbstractString) -> FileComplexity
+
+Analyze a Julia source file and return complexity information.
+
+# Arguments
+- `filepath::AbstractString`: Path to a Julia source file
+
+# Returns
+- `FileComplexity`: Complexity information for the file
+
+# Example
+```julia
+fc = file_complexity("src/MyModule.jl")
+println("Total complexity: ", fc.total_complexity)
+for func in fc.functions
+    println("  ", func.name, ": ", func.complexity)
+end
+```
+"""
+function file_complexity(filepath::AbstractString)
+    if !isfile(filepath)
+        throw(ArgumentError("File not found: $filepath"))
+    end
+    code = read(filepath, String)
+    functions = complexity_report(code)
+    return FileComplexity(filepath, functions)
+end
+
+"""
+    directory_complexity(dirpath::AbstractString; recursive::Bool=true) -> Vector{FileComplexity}
+
+Analyze all Julia source files in a directory and return complexity information.
+
+# Arguments
+- `dirpath::AbstractString`: Path to a directory
+- `recursive::Bool=true`: Whether to search subdirectories recursively
+
+# Returns
+- `Vector{FileComplexity}`: Complexity information for each Julia file found
+
+# Example
+```julia
+results = directory_complexity("src/")
+for fc in results
+    println(fc.path, ": ", fc.total_complexity)
+end
+```
+"""
+function directory_complexity(dirpath::AbstractString; recursive::Bool=true)
+    if !isdir(dirpath)
+        throw(ArgumentError("Directory not found: $dirpath"))
+    end
+    
+    results = FileComplexity[]
+    
+    if recursive
+        for (root, dirs, files) in walkdir(dirpath)
+            for file in files
+                if endswith(file, ".jl")
+                    filepath = joinpath(root, file)
+                    try
+                        fc = file_complexity(filepath)
+                        push!(results, fc)
+                    catch e
+                        @warn "Failed to analyze $filepath" exception=e
+                    end
+                end
+            end
+        end
+    else
+        for file in readdir(dirpath)
+            if endswith(file, ".jl")
+                filepath = joinpath(dirpath, file)
+                if isfile(filepath)
+                    try
+                        fc = file_complexity(filepath)
+                        push!(results, fc)
+                    catch e
+                        @warn "Failed to analyze $filepath" exception=e
+                    end
+                end
+            end
+        end
+    end
+    
+    return results
+end
+
+"""
+    package_complexity(pkg::Module) -> Vector{FileComplexity}
+
+Analyze all Julia source files in a package and return complexity information.
+
+# Arguments
+- `pkg::Module`: A loaded Julia module/package
+
+# Returns
+- `Vector{FileComplexity}`: Complexity information for each Julia file in the package
+
+# Example
+```julia
+using MyPackage
+results = package_complexity(MyPackage)
+for fc in results
+    println(fc.path, ": ", fc.total_complexity)
+end
+```
+"""
+function package_complexity(pkg::Module)
+    # Get the package directory from the module's path
+    pkg_path = pathof(pkg)
+    if pkg_path === nothing
+        throw(ArgumentError("Cannot determine source path for module $pkg"))
+    end
+    
+    # Get the src directory (parent of the main module file)
+    src_dir = dirname(pkg_path)
+    
+    return directory_complexity(src_dir; recursive=true)
+end
+
+"""
+    package_complexity(pkg_name::AbstractString) -> Vector{FileComplexity}
+
+Analyze all Julia source files in a package given by name.
+
+# Arguments
+- `pkg_name::AbstractString`: Name of a package (must be in the load path)
+
+# Returns
+- `Vector{FileComplexity}`: Complexity information for each Julia file in the package
+
+# Example
+```julia
+results = package_complexity("CodeComplexity")
+```
+"""
+function package_complexity(pkg_name::AbstractString)
+    # Find the package in the load path
+    for depot in DEPOT_PATH
+        pkg_dir = joinpath(depot, "packages", pkg_name)
+        if isdir(pkg_dir)
+            # Find the latest version
+            versions = readdir(pkg_dir)
+            if !isempty(versions)
+                latest = joinpath(pkg_dir, last(sort(versions)), "src")
+                if isdir(latest)
+                    return directory_complexity(latest; recursive=true)
+                end
+            end
+        end
+    end
+    
+    # Try to find in dev packages or current directory
+    for path in LOAD_PATH
+        if path isa AbstractString
+            candidate = joinpath(path, pkg_name, "src")
+            if isdir(candidate)
+                return directory_complexity(candidate; recursive=true)
+            end
+            # Also try without src subdirectory
+            candidate = joinpath(path, pkg_name)
+            if isdir(candidate)
+                return directory_complexity(candidate; recursive=true)
+            end
+        end
+    end
+    
+    throw(ArgumentError("Package not found: $pkg_name"))
+end
+
+# Pretty printing
+function Base.show(io::IO, fc::FunctionComplexity)
+    line_info = fc.line > 0 ? " (line $(fc.line))" : ""
+    print(io, "FunctionComplexity(\"$(fc.name)\", complexity=$(fc.complexity)$line_info)")
+end
+
+function Base.show(io::IO, ::MIME"text/plain", fc::FileComplexity)
+    println(io, "FileComplexity: $(fc.path)")
+    println(io, "  Total complexity: $(fc.total_complexity)")
+    println(io, "  Functions ($(length(fc.functions))):")
+    for func in fc.functions
+        line_info = func.line > 0 ? " (line $(func.line))" : ""
+        println(io, "    $(func.name): $(func.complexity)$line_info")
+    end
+end
 
 end # module CodeComplexity
