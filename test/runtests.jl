@@ -712,6 +712,268 @@ using Aqua
         @test fc.total_complexity == 5
     end
 
+    @testset "max_complexity filtering" begin
+        @testset "complexity_report with max_complexity" begin
+            code = """
+            function simple()
+                return 1
+            end
+            
+            function medium(x)
+                if x > 0
+                    return x
+                end
+                return 0
+            end
+            
+            function complex(x, y, z)
+                if x > 0
+                    if y > 0
+                        if z > 0
+                            return x + y + z
+                        else
+                            return x + y
+                        end
+                    else
+                        return x
+                    end
+                else
+                    return 0
+                end
+            end
+            """
+            # Get all functions
+            all_report = complexity_report(code)
+            @test length(all_report) == 3
+            
+            # Filter: only complexity > 1
+            filtered = complexity_report(code; max_complexity=1)
+            @test length(filtered) == 2
+            @test all(f -> f.complexity > 1, filtered)
+            
+            # Filter: only complexity > 2
+            filtered = complexity_report(code; max_complexity=2)
+            @test length(filtered) == 1
+            @test filtered[1].name == "complex"
+            @test filtered[1].complexity == 4
+            
+            # Filter: only complexity > 10 (none match)
+            filtered = complexity_report(code; max_complexity=10)
+            @test isempty(filtered)
+        end
+
+        @testset "file_complexity with max_complexity" begin
+            mktempdir() do tmpdir
+                file = joinpath(tmpdir, "test.jl")
+                write(file, """
+                function low()
+                    return 1
+                end
+                
+                function high(x, y)
+                    if x > 0
+                        if y > 0
+                            return x + y
+                        end
+                    end
+                    return 0
+                end
+                """)
+                
+                # All functions
+                fc = file_complexity(file)
+                @test length(fc.functions) == 2
+                @test fc.total_complexity == 4  # 1 + 3
+                
+                # Only high complexity
+                fc = file_complexity(file; max_complexity=1)
+                @test length(fc.functions) == 1
+                @test fc.functions[1].name == "high"
+                @test fc.total_complexity == 3
+            end
+        end
+
+        @testset "directory_complexity with max_complexity" begin
+            mktempdir() do tmpdir
+                # File with low complexity functions
+                file1 = joinpath(tmpdir, "simple.jl")
+                write(file1, """
+                function a()
+                    return 1
+                end
+                function b()
+                    return 2
+                end
+                """)
+                
+                # File with mixed complexity
+                file2 = joinpath(tmpdir, "mixed.jl")
+                write(file2, """
+                function c()
+                    return 3
+                end
+                function d(x, y, z)
+                    if x > 0
+                        if y > 0
+                            if z > 0
+                                return 1
+                            end
+                        end
+                    end
+                    return 0
+                end
+                """)
+                
+                # All files
+                results = directory_complexity(tmpdir)
+                @test length(results) == 2
+                
+                # Only files with violations > 2
+                results = directory_complexity(tmpdir; max_complexity=2)
+                @test length(results) == 1
+                @test basename(results[1].path) == "mixed.jl"
+                @test length(results[1].functions) == 1
+                @test results[1].functions[1].name == "d"
+                
+                # No violations for high threshold
+                results = directory_complexity(tmpdir; max_complexity=10)
+                @test isempty(results)
+            end
+        end
+    end
+
+    @testset "check_complexity" begin
+        @testset "check_complexity on file - no violations" begin
+            mktempdir() do tmpdir
+                file = joinpath(tmpdir, "good.jl")
+                write(file, """
+                function simple()
+                    return 1
+                end
+                """)
+                
+                # Should not throw
+                violations = check_complexity(file; max_complexity=5)
+                @test isempty(violations)
+            end
+        end
+
+        @testset "check_complexity on file - with violations" begin
+            mktempdir() do tmpdir
+                file = joinpath(tmpdir, "bad.jl")
+                write(file, """
+                function complex(a, b, c, d)
+                    if a > 0
+                        if b > 0
+                            if c > 0
+                                if d > 0
+                                    return 1
+                                end
+                            end
+                        end
+                    end
+                    return 0
+                end
+                """)
+                
+                # Should throw
+                @test_throws ErrorException check_complexity(file; max_complexity=3)
+                
+                # Should not throw with throw_on_violation=false
+                violations = check_complexity(file; max_complexity=3, throw_on_violation=false)
+                @test length(violations) == 1
+                @test violations[1].functions[1].name == "complex"
+                @test violations[1].functions[1].complexity == 5
+            end
+        end
+
+        @testset "check_complexity on directory" begin
+            mktempdir() do tmpdir
+                # Good file
+                write(joinpath(tmpdir, "good.jl"), """
+                function ok()
+                    return 1
+                end
+                """)
+                
+                # Bad file
+                write(joinpath(tmpdir, "bad.jl"), """
+                function too_complex(x, y)
+                    if x > 0
+                        if y > 0
+                            return x + y
+                        end
+                    end
+                    return 0
+                end
+                """)
+                
+                # Should throw due to bad.jl
+                @test_throws ErrorException check_complexity(tmpdir; max_complexity=2)
+                
+                # Get violations without throwing
+                violations = check_complexity(tmpdir; max_complexity=2, throw_on_violation=false)
+                @test length(violations) == 1
+                @test occursin("bad.jl", violations[1].path)
+            end
+        end
+
+        @testset "check_complexity on module" begin
+            # Test on CodeComplexity itself
+            # This should pass with a reasonable threshold
+            violations = check_complexity(CodeComplexity; max_complexity=20, throw_on_violation=false)
+            # Just verify it runs without error
+            @test violations isa Vector{FileComplexity}
+        end
+
+        @testset "check_complexity error message format" begin
+            mktempdir() do tmpdir
+                file = joinpath(tmpdir, "test.jl")
+                write(file, """
+                function problematic(x)
+                    if x > 0
+                        if x > 1
+                            return 2
+                        end
+                    end
+                    return 0
+                end
+                """)
+                
+                err = try
+                    check_complexity(file; max_complexity=2)
+                    nothing
+                catch e
+                    e
+                end
+                
+                @test err !== nothing
+                @test occursin("Cyclomatic complexity violations", err.msg)
+                @test occursin("problematic", err.msg)
+                @test occursin("complexity 3", err.msg)
+            end
+        end
+
+        @testset "check_complexity with default max_complexity" begin
+            mktempdir() do tmpdir
+                file = joinpath(tmpdir, "simple.jl")
+                write(file, """
+                function simple()
+                    return 1
+                end
+                """)
+                
+                # Default max_complexity is 10, simple function should pass
+                violations = check_complexity(file)
+                @test isempty(violations)
+            end
+        end
+
+        @testset "check_complexity path not found" begin
+            @test_throws ArgumentError check_complexity("nonexistent_path")
+        end
+    end
+
 end
 
 @testset "Aqua" begin

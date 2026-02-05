@@ -5,6 +5,7 @@ export cyclomatic_complexity,
     file_complexity,
     directory_complexity,
     package_complexity,
+    check_complexity,
     FunctionComplexity,
     FileComplexity
 
@@ -210,13 +211,39 @@ function _get_complexity(expr)
     return complexity
 end
 
+# Filter functions by max_complexity threshold
+function _filter_by_complexity(functions::Vector{FunctionComplexity}, max_complexity::Union{Int,Nothing})
+    if max_complexity === nothing
+        return functions
+    end
+    return filter(f -> f.complexity > max_complexity, functions)
+end
+
+# Filter file complexities and their functions by max_complexity
+function _filter_files_by_complexity(files::Vector{FileComplexity}, max_complexity::Union{Int,Nothing})
+    if max_complexity === nothing
+        return files
+    end
+    
+    filtered_files = FileComplexity[]
+    for fc in files
+        filtered_funcs = _filter_by_complexity(fc.functions, max_complexity)
+        if !isempty(filtered_funcs)
+            push!(filtered_files, FileComplexity(fc.path, filtered_funcs))
+        end
+    end
+    return filtered_files
+end
+
 """
-    complexity_report(code::AbstractString) -> Vector{FunctionComplexity}
+    complexity_report(code::AbstractString; max_complexity::Union{Int,Nothing}=nothing) -> Vector{FunctionComplexity}
 
 Analyze Julia code and return complexity information for each function defined.
 
 # Arguments
 - `code::AbstractString`: Julia source code as a string
+- `max_complexity::Union{Int,Nothing}=nothing`: If specified, only return functions with 
+  complexity greater than this threshold. Useful for finding functions that exceed a limit.
 
 # Returns
 - `Vector{FunctionComplexity}`: A vector of complexity info for each function
@@ -237,11 +264,16 @@ end
 \"\"\"
 report = complexity_report(code)
 # Returns 2 FunctionComplexity objects
+
+# Only get functions with complexity > 1
+violations = complexity_report(code; max_complexity=1)
+# Returns only foo (complexity 2)
 ```
 """
-function complexity_report(code::AbstractString)
+function complexity_report(code::AbstractString; max_complexity::Union{Int,Nothing}=nothing)
     expr = Meta.parse("begin\n$code\nend")
-    return _extract_functions(expr)
+    functions = _extract_functions(expr)
+    return _filter_by_complexity(functions, max_complexity)
 end
 
 # Extract function definitions and their complexities
@@ -343,12 +375,14 @@ function _get_line_number(expr)
 end
 
 """
-    file_complexity(filepath::AbstractString) -> FileComplexity
+    file_complexity(filepath::AbstractString; max_complexity::Union{Int,Nothing}=nothing) -> FileComplexity
 
 Analyze a Julia source file and return complexity information.
 
 # Arguments
 - `filepath::AbstractString`: Path to a Julia source file
+- `max_complexity::Union{Int,Nothing}=nothing`: If specified, only include functions with 
+  complexity greater than this threshold.
 
 # Returns
 - `FileComplexity`: Complexity information for the file
@@ -360,25 +394,33 @@ println("Total complexity: ", fc.total_complexity)
 for func in fc.functions
     println("  ", func.name, ": ", func.complexity)
 end
+
+# Find functions exceeding complexity threshold
+fc = file_complexity("src/MyModule.jl"; max_complexity=10)
+for func in fc.functions
+    println("WARNING: ", func.name, " has complexity ", func.complexity)
+end
 ```
 """
-function file_complexity(filepath::AbstractString)
+function file_complexity(filepath::AbstractString; max_complexity::Union{Int,Nothing}=nothing)
     if !isfile(filepath)
         throw(ArgumentError("File not found: $filepath"))
     end
     code = read(filepath, String)
-    functions = complexity_report(code)
+    functions = complexity_report(code; max_complexity=max_complexity)
     return FileComplexity(filepath, functions)
 end
 
 """
-    directory_complexity(dirpath::AbstractString; recursive::Bool=true) -> Vector{FileComplexity}
+    directory_complexity(dirpath::AbstractString; recursive::Bool=true, max_complexity::Union{Int,Nothing}=nothing) -> Vector{FileComplexity}
 
 Analyze all Julia source files in a directory and return complexity information.
 
 # Arguments
 - `dirpath::AbstractString`: Path to a directory
 - `recursive::Bool=true`: Whether to search subdirectories recursively
+- `max_complexity::Union{Int,Nothing}=nothing`: If specified, only include functions with 
+  complexity greater than this threshold. Files with no violations are excluded.
 
 # Returns
 - `Vector{FileComplexity}`: Complexity information for each Julia file found
@@ -389,9 +431,17 @@ results = directory_complexity("src/")
 for fc in results
     println(fc.path, ": ", fc.total_complexity)
 end
+
+# Find all functions exceeding complexity limit
+violations = directory_complexity("src/"; max_complexity=10)
+for fc in violations
+    for func in fc.functions
+        println(fc.path, ":", func.line, " ", func.name, " complexity=", func.complexity)
+    end
+end
 ```
 """
-function directory_complexity(dirpath::AbstractString; recursive::Bool=true)
+function directory_complexity(dirpath::AbstractString; recursive::Bool=true, max_complexity::Union{Int,Nothing}=nothing)
     if !isdir(dirpath)
         throw(ArgumentError("Directory not found: $dirpath"))
     end
@@ -404,8 +454,11 @@ function directory_complexity(dirpath::AbstractString; recursive::Bool=true)
                 if endswith(file, ".jl")
                     filepath = joinpath(root, file)
                     try
-                        fc = file_complexity(filepath)
-                        push!(results, fc)
+                        fc = file_complexity(filepath; max_complexity=max_complexity)
+                        # Only include files that have functions (after filtering)
+                        if max_complexity === nothing || !isempty(fc.functions)
+                            push!(results, fc)
+                        end
                     catch e
                         @warn "Failed to analyze $filepath" exception=e
                     end
@@ -418,8 +471,11 @@ function directory_complexity(dirpath::AbstractString; recursive::Bool=true)
                 filepath = joinpath(dirpath, file)
                 if isfile(filepath)
                     try
-                        fc = file_complexity(filepath)
-                        push!(results, fc)
+                        fc = file_complexity(filepath; max_complexity=max_complexity)
+                        # Only include files that have functions (after filtering)
+                        if max_complexity === nothing || !isempty(fc.functions)
+                            push!(results, fc)
+                        end
                     catch e
                         @warn "Failed to analyze $filepath" exception=e
                     end
@@ -432,12 +488,14 @@ function directory_complexity(dirpath::AbstractString; recursive::Bool=true)
 end
 
 """
-    package_complexity(pkg::Module) -> Vector{FileComplexity}
+    package_complexity(pkg::Module; max_complexity::Union{Int,Nothing}=nothing) -> Vector{FileComplexity}
 
 Analyze all Julia source files in a package and return complexity information.
 
 # Arguments
 - `pkg::Module`: A loaded Julia module/package
+- `max_complexity::Union{Int,Nothing}=nothing`: If specified, only include functions with 
+  complexity greater than this threshold.
 
 # Returns
 - `Vector{FileComplexity}`: Complexity information for each Julia file in the package
@@ -449,9 +507,13 @@ results = package_complexity(MyPackage)
 for fc in results
     println(fc.path, ": ", fc.total_complexity)
 end
+
+# Check for functions exceeding complexity limit
+violations = package_complexity(MyPackage; max_complexity=15)
+@test isempty(violations)  # Fail if any function exceeds limit
 ```
 """
-function package_complexity(pkg::Module)
+function package_complexity(pkg::Module; max_complexity::Union{Int,Nothing}=nothing)
     # Get the package directory from the module's path
     pkg_path = pathof(pkg)
     if pkg_path === nothing
@@ -461,16 +523,18 @@ function package_complexity(pkg::Module)
     # Get the src directory (parent of the main module file)
     src_dir = dirname(pkg_path)
     
-    return directory_complexity(src_dir; recursive=true)
+    return directory_complexity(src_dir; recursive=true, max_complexity=max_complexity)
 end
 
 """
-    package_complexity(pkg_name::AbstractString) -> Vector{FileComplexity}
+    package_complexity(pkg_name::AbstractString; max_complexity::Union{Int,Nothing}=nothing) -> Vector{FileComplexity}
 
 Analyze all Julia source files in a package given by name.
 
 # Arguments
 - `pkg_name::AbstractString`: Name of a package (must be in the load path)
+- `max_complexity::Union{Int,Nothing}=nothing`: If specified, only include functions with 
+  complexity greater than this threshold.
 
 # Returns
 - `Vector{FileComplexity}`: Complexity information for each Julia file in the package
@@ -478,9 +542,12 @@ Analyze all Julia source files in a package given by name.
 # Example
 ```julia
 results = package_complexity("CodeComplexity")
+
+# Find violations
+violations = package_complexity("CodeComplexity"; max_complexity=10)
 ```
 """
-function package_complexity(pkg_name::AbstractString)
+function package_complexity(pkg_name::AbstractString; max_complexity::Union{Int,Nothing}=nothing)
     # Find the package in the load path
     for depot in DEPOT_PATH
         pkg_dir = joinpath(depot, "packages", pkg_name)
@@ -490,7 +557,7 @@ function package_complexity(pkg_name::AbstractString)
             if !isempty(versions)
                 latest = joinpath(pkg_dir, last(sort(versions)), "src")
                 if isdir(latest)
-                    return directory_complexity(latest; recursive=true)
+                    return directory_complexity(latest; recursive=true, max_complexity=max_complexity)
                 end
             end
         end
@@ -501,17 +568,91 @@ function package_complexity(pkg_name::AbstractString)
         if path isa AbstractString
             candidate = joinpath(path, pkg_name, "src")
             if isdir(candidate)
-                return directory_complexity(candidate; recursive=true)
+                return directory_complexity(candidate; recursive=true, max_complexity=max_complexity)
             end
             # Also try without src subdirectory
             candidate = joinpath(path, pkg_name)
             if isdir(candidate)
-                return directory_complexity(candidate; recursive=true)
+                return directory_complexity(candidate; recursive=true, max_complexity=max_complexity)
             end
         end
     end
     
     throw(ArgumentError("Package not found: $pkg_name"))
+end
+
+"""
+    check_complexity(path_or_pkg; max_complexity::Int=10, throw_on_violation::Bool=true) -> Vector{FileComplexity}
+
+Check that no functions exceed the specified complexity threshold. Useful for tests and CI.
+
+# Arguments
+- `path_or_pkg`: A file path, directory path, or loaded Module to analyze
+- `max_complexity::Int=10`: Maximum allowed complexity (functions with complexity > this value are violations)
+- `throw_on_violation::Bool=true`: If true, throws an error when violations are found
+
+# Returns
+- `Vector{FileComplexity}`: Files containing functions that exceed the threshold
+
+# Throws
+- `ErrorException`: If `throw_on_violation=true` and any function exceeds the limit
+
+# Example
+```julia
+# In your test suite:
+using CodeComplexity
+using MyPackage
+
+@testset "Code complexity" begin
+    # This will fail if any function has complexity > 10
+    check_complexity(MyPackage; max_complexity=10)
+end
+
+# In a pre-commit hook or CI script:
+check_complexity("src/"; max_complexity=15)
+
+# Get violations without throwing:
+violations = check_complexity("src/"; max_complexity=10, throw_on_violation=false)
+for fc in violations
+    for func in fc.functions
+        println("VIOLATION: \$(fc.path):\$(func.line) \$(func.name) (complexity=\$(func.complexity))")
+    end
+end
+```
+"""
+function check_complexity(path::AbstractString; max_complexity::Int=10, throw_on_violation::Bool=true)
+    violations = if isfile(path)
+        fc = file_complexity(path; max_complexity=max_complexity)
+        isempty(fc.functions) ? FileComplexity[] : [fc]
+    elseif isdir(path)
+        directory_complexity(path; recursive=true, max_complexity=max_complexity)
+    else
+        throw(ArgumentError("Path not found: $path"))
+    end
+    
+    _handle_violations(violations, max_complexity, throw_on_violation)
+    return violations
+end
+
+function check_complexity(pkg::Module; max_complexity::Int=10, throw_on_violation::Bool=true)
+    violations = package_complexity(pkg; max_complexity=max_complexity)
+    _handle_violations(violations, max_complexity, throw_on_violation)
+    return violations
+end
+
+function _handle_violations(violations::Vector{FileComplexity}, max_complexity::Int, throw_on_violation::Bool)
+    if throw_on_violation && !isempty(violations)
+        # Build error message
+        msg = IOBuffer()
+        println(msg, "Cyclomatic complexity violations (max_complexity=$max_complexity):")
+        for fc in violations
+            for func in fc.functions
+                line_info = func.line > 0 ? ":$(func.line)" : ""
+                println(msg, "  $(fc.path)$line_info: $(func.name) has complexity $(func.complexity)")
+            end
+        end
+        error(String(take!(msg)))
+    end
 end
 
 # Pretty printing
