@@ -112,102 +112,63 @@ end
 
 # Internal function to recursively calculate complexity
 function _get_complexity(expr)
+    expr isa Expr || return 0
+    return _get_complexity_for_head(Val(expr.head), expr.args)
+end
+
+# Sum complexity of all arguments
+function _sum_args_complexity(args)
     complexity = 0
-    
-    if expr isa Expr
-        head = expr.head
-        args = expr.args
-        
-        if head === :if || head === :elseif
-            # if/elseif adds 1 for the condition
-            complexity += 1
-            # Recurse into all branches
-            for arg in args
-                complexity += _get_complexity(arg)
-            end
-            
-        elseif head === :for
-            # for loop adds 1
-            complexity += 1
-            for arg in args
-                complexity += _get_complexity(arg)
-            end
-            
-        elseif head === :while
-            # while loop adds 1
-            complexity += 1
-            for arg in args
-                complexity += _get_complexity(arg)
-            end
-            
-        elseif head === :try
-            # try block: count catch clauses
-            # Structure: try body [catch var catchbody] [finally finallybody]
-            for (i, arg) in enumerate(args)
-                if arg isa Expr
-                    complexity += _get_complexity(arg)
-                elseif arg === false
-                    # This is the catch variable position when there's no catch
-                    continue
-                elseif arg isa Symbol && i == 2
-                    # catch variable - check if there's a catch block
-                    # If there's a catch block, add 1 for the exception handler
-                    if length(args) >= 3 && args[3] !== false
-                        complexity += 1
-                    end
-                end
-            end
-            # Handle the case where catch exists (position 3 in args)
-            if length(args) >= 3 && args[3] !== false && !(args[2] isa Symbol)
+    for arg in args
+        complexity += _get_complexity(arg)
+    end
+    return complexity
+end
+
+# Default: recurse into children
+_get_complexity_for_head(::Val, args) = _sum_args_complexity(args)
+
+# Heads that add 1 and recurse into all args
+_get_complexity_for_head(::Val{:if}, args) = 1 + _sum_args_complexity(args)
+_get_complexity_for_head(::Val{:elseif}, args) = 1 + _sum_args_complexity(args)
+_get_complexity_for_head(::Val{:for}, args) = 1 + _sum_args_complexity(args)
+_get_complexity_for_head(::Val{:while}, args) = 1 + _sum_args_complexity(args)
+_get_complexity_for_head(::Val{:catch}, args) = 1 + _sum_args_complexity(args)
+_get_complexity_for_head(::Val{:&&}, args) = 1 + _sum_args_complexity(args)
+_get_complexity_for_head(::Val{:||}, args) = 1 + _sum_args_complexity(args)
+_get_complexity_for_head(::Val{:?}, args) = 1 + _sum_args_complexity(args)
+
+# try block: count catch clauses
+# Structure: try body [catch var catchbody] [finally finallybody]
+function _get_complexity_for_head(::Val{:try}, args)
+    complexity = 0
+    for (i, arg) in enumerate(args)
+        if arg isa Expr
+            complexity += _get_complexity(arg)
+        elseif arg isa Symbol && i == 2
+            # catch variable - if there's a catch block, add 1
+            if length(args) >= 3 && args[3] !== false
                 complexity += 1
-            end
-            
-        elseif head === :catch
-            # Explicit catch block adds 1
-            complexity += 1
-            for arg in args
-                complexity += _get_complexity(arg)
-            end
-            
-        elseif head === :&&
-            # Short-circuit AND adds 1
-            complexity += 1
-            for arg in args
-                complexity += _get_complexity(arg)
-            end
-            
-        elseif head === :||
-            # Short-circuit OR adds 1
-            complexity += 1
-            for arg in args
-                complexity += _get_complexity(arg)
-            end
-            
-        elseif head === :? || head === :if  # Ternary is sometimes parsed as :if
-            # Ternary operator adds 1 (already covered by :if above)
-            complexity += 1
-            for arg in args
-                complexity += _get_complexity(arg)
-            end
-            
-        elseif head === :macrocall
-            # Check for @goto which adds a branch
-            if length(args) > 0 && args[1] === Symbol("@goto")
-                complexity += 1
-            end
-            # Recurse into macro arguments (skip the macro name and line number)
-            for arg in args[3:end]
-                complexity += _get_complexity(arg)
-            end
-            
-        else
-            # For all other expression types, recurse into children
-            for arg in args
-                complexity += _get_complexity(arg)
             end
         end
     end
-    
+    # Handle case where catch exists (position 3) but no catch variable
+    if length(args) >= 3 && args[3] !== false && !(args[2] isa Symbol)
+        complexity += 1
+    end
+    return complexity
+end
+
+# macrocall: check for @goto and recurse into arguments
+function _get_complexity_for_head(::Val{:macrocall}, args)
+    complexity = 0
+    if length(args) > 0 && args[1] === Symbol("@goto")
+        complexity += 1
+    end
+    # Recurse into macro arguments (skip the macro name and line number)
+    for arg in args[3:end]
+        complexity += _get_complexity(arg)
+    end
     return complexity
 end
 
