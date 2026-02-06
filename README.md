@@ -102,7 +102,7 @@ check_complexity("src/"; max_complexity=15)
 
 This package uses **[Aqua.jl](https://github.com/JuliaTesting/Aqua.jl)** in its test suite (`Aqua.test_all(CodeComplexity)`) for general package-quality checks.
 
-**Relevance for Aqua:** The `check_complexity` feature could fit as an optional Aqua test (e.g. `test_cyclomatic_complexity`): a single, automatable check that fails when any function exceeds a complexity threshold, consistent with Aqua’s other checks (ambiguities, undefined exports, stale deps, etc.). That would let users opt in via something like `Aqua.test_all(MyPackage; cyclomatic_complexity=(max=10,))` without adding a separate test. Until or unless that is added to Aqua, you can run both in the same test suite—Aqua for project hygiene and CodeComplexity for complexity limits.
+**Relevance for Aqua:** The `check_complexity` feature could fit as an optional Aqua test (e.g. `test_cyclomatic_complexity`): a single, automatable check that fails when any function exceeds a complexity threshold, consistent with Aqua's other checks (ambiguities, undefined exports, stale deps, etc.). That would let users opt in via something like `Aqua.test_all(MyPackage; cyclomatic_complexity=(max=10,))` without adding a separate test. Until or unless that is added to Aqua, you can run both in the same test suite—Aqua for project hygiene and CodeComplexity for complexity limits.
 
 ## License
 
