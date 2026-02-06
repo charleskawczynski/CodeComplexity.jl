@@ -271,9 +271,23 @@ violations = complexity_report(code; max_complexity=1)
 ```
 """
 function complexity_report(code::AbstractString; max_complexity::Union{Int,Nothing}=nothing)
-    expr = Meta.parse("begin\n$code\nend")
+    expr = _parse_code(code)
     functions = _extract_functions(expr)
     return _filter_by_complexity(functions, max_complexity)
+end
+
+# Parse code string into AST, handling different Julia versions and edge cases
+function _parse_code(code::AbstractString)
+    # Try Meta.parseall first (available in Julia 1.9+) as it handles whole files better
+    if isdefined(Meta, :parseall)
+        try
+            return Meta.parseall(code)
+        catch
+            # Fall back to begin-end wrapping
+        end
+    end
+    # Fall back: wrap in begin...end block
+    return Meta.parse("begin\n$code\nend")
 end
 
 # Extract function definitions and their complexities
