@@ -98,6 +98,16 @@ Or scan a directory in a script:
 check_complexity("src/"; max_complexity=15)
 ```
 
+## Code style (JuliaFormatter)
+
+Formatting is enforced by [JuliaFormatter.jl](https://github.com/domluna/JuliaFormatter.jl) via the [JuliaFormatter](.github/workflows/JuliaFormatter.yml) workflow. Local rules live in [`.JuliaFormatter.toml`](.JuliaFormatter.toml) (style, indent, margin, ignore). To format the repo:
+
+```bash
+julia -e 'using JuliaFormatter; JuliaFormatter.format(".")'
+```
+
+Or from a Julia REPL: `using JuliaFormatter; JuliaFormatter.format(".")`.
+
 ## Aqua.jl
 
 This package uses **[Aqua.jl](https://github.com/JuliaTesting/Aqua.jl)** in its test suite (`Aqua.test_all(CodeComplexity)`) for general package-quality checks.
