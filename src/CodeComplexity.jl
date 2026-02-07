@@ -42,7 +42,7 @@ struct FileComplexity
 end
 
 function FileComplexity(path::String, functions::Vector{FunctionComplexity})
-    total = sum(f.complexity for f in functions; init=0)
+    total = sum(f.complexity for f in functions; init = 0)
     FileComplexity(path, functions, total)
 end
 
@@ -173,7 +173,10 @@ function _get_complexity_for_head(::Val{:macrocall}, args)
 end
 
 # Filter functions by max_complexity threshold
-function _filter_by_complexity(functions::Vector{FunctionComplexity}, max_complexity::Union{Int,Nothing})
+function _filter_by_complexity(
+    functions::Vector{FunctionComplexity},
+    max_complexity::Union{Int, Nothing},
+)
     if max_complexity === nothing
         return functions
     end
@@ -181,11 +184,14 @@ function _filter_by_complexity(functions::Vector{FunctionComplexity}, max_comple
 end
 
 # Filter file complexities and their functions by max_complexity
-function _filter_files_by_complexity(files::Vector{FileComplexity}, max_complexity::Union{Int,Nothing})
+function _filter_files_by_complexity(
+    files::Vector{FileComplexity},
+    max_complexity::Union{Int, Nothing},
+)
     if max_complexity === nothing
         return files
     end
-    
+
     filtered_files = FileComplexity[]
     for fc in files
         filtered_funcs = _filter_by_complexity(fc.functions, max_complexity)
@@ -231,7 +237,10 @@ violations = complexity_report(code; max_complexity=1)
 # Returns only foo (complexity 2)
 ```
 """
-function complexity_report(code::AbstractString; max_complexity::Union{Int,Nothing}=nothing)
+function complexity_report(
+    code::AbstractString;
+    max_complexity::Union{Int, Nothing} = nothing,
+)
     expr = _parse_code(code)
     functions = _extract_functions(expr)
     return _filter_by_complexity(functions, max_complexity)
@@ -252,7 +261,10 @@ function _parse_code(code::AbstractString)
 end
 
 # Extract function definitions and their complexities
-function _extract_functions(expr, results::Vector{FunctionComplexity}=FunctionComplexity[])
+function _extract_functions(
+    expr,
+    results::Vector{FunctionComplexity} = FunctionComplexity[],
+)
     if expr isa Expr
         if expr.head === :function || expr.head === :(=)
             # Check if this is a function definition
@@ -322,7 +334,11 @@ function _extract_name(expr)
             return _extract_name(expr.args[1])
         elseif expr.head === :(.) && length(expr.args) >= 2
             # Qualified name like Module.func
-            return Symbol(string(_extract_name(expr.args[1])), ".", string(expr.args[2].value))
+            return Symbol(
+                string(_extract_name(expr.args[1])),
+                ".",
+                string(expr.args[2].value),
+            )
         end
     end
     return :unknown
@@ -377,12 +393,15 @@ for func in fc.functions
 end
 ```
 """
-function file_complexity(filepath::AbstractString; max_complexity::Union{Int,Nothing}=nothing)
+function file_complexity(
+    filepath::AbstractString;
+    max_complexity::Union{Int, Nothing} = nothing,
+)
     if !isfile(filepath)
         throw(ArgumentError("File not found: $filepath"))
     end
     code = read(filepath, String)
-    functions = complexity_report(code; max_complexity=max_complexity)
+    functions = complexity_report(code; max_complexity = max_complexity)
     return FileComplexity(filepath, functions)
 end
 
@@ -416,26 +435,30 @@ for fc in violations
 end
 ```
 """
-function directory_complexity(dirpath::AbstractString; recursive::Bool=true, max_complexity::Union{Int,Nothing}=nothing)
+function directory_complexity(
+    dirpath::AbstractString;
+    recursive::Bool = true,
+    max_complexity::Union{Int, Nothing} = nothing,
+)
     if !isdir(dirpath)
         throw(ArgumentError("Directory not found: $dirpath"))
     end
-    
+
     results = FileComplexity[]
-    
+
     if recursive
         for (root, dirs, files) in walkdir(dirpath)
             for file in files
                 if endswith(file, ".jl")
                     filepath = joinpath(root, file)
                     try
-                        fc = file_complexity(filepath; max_complexity=max_complexity)
+                        fc = file_complexity(filepath; max_complexity = max_complexity)
                         # Only include files that have functions (after filtering)
                         if max_complexity === nothing || !isempty(fc.functions)
                             push!(results, fc)
                         end
                     catch e
-                        @warn "Failed to analyze $filepath" exception=e
+                        @warn "Failed to analyze $filepath" exception = e
                     end
                 end
             end
@@ -446,19 +469,19 @@ function directory_complexity(dirpath::AbstractString; recursive::Bool=true, max
                 filepath = joinpath(dirpath, file)
                 if isfile(filepath)
                     try
-                        fc = file_complexity(filepath; max_complexity=max_complexity)
+                        fc = file_complexity(filepath; max_complexity = max_complexity)
                         # Only include files that have functions (after filtering)
                         if max_complexity === nothing || !isempty(fc.functions)
                             push!(results, fc)
                         end
                     catch e
-                        @warn "Failed to analyze $filepath" exception=e
+                        @warn "Failed to analyze $filepath" exception = e
                     end
                 end
             end
         end
     end
-    
+
     return results
 end
 
@@ -488,17 +511,17 @@ violations = package_complexity(MyPackage; max_complexity=15)
 @test isempty(violations)  # Fail if any function exceeds limit
 ```
 """
-function package_complexity(pkg::Module; max_complexity::Union{Int,Nothing}=nothing)
+function package_complexity(pkg::Module; max_complexity::Union{Int, Nothing} = nothing)
     # Get the package directory from the module's path
     pkg_path = pathof(pkg)
     if pkg_path === nothing
         throw(ArgumentError("Cannot determine source path for module $pkg"))
     end
-    
+
     # Get the src directory (parent of the main module file)
     src_dir = dirname(pkg_path)
-    
-    return directory_complexity(src_dir; recursive=true, max_complexity=max_complexity)
+
+    return directory_complexity(src_dir; recursive = true, max_complexity = max_complexity)
 end
 
 """
@@ -522,7 +545,10 @@ results = package_complexity("CodeComplexity")
 violations = package_complexity("CodeComplexity"; max_complexity=10)
 ```
 """
-function package_complexity(pkg_name::AbstractString; max_complexity::Union{Int,Nothing}=nothing)
+function package_complexity(
+    pkg_name::AbstractString;
+    max_complexity::Union{Int, Nothing} = nothing,
+)
     # Find the package in the load path
     for depot in DEPOT_PATH
         pkg_dir = joinpath(depot, "packages", pkg_name)
@@ -532,27 +558,39 @@ function package_complexity(pkg_name::AbstractString; max_complexity::Union{Int,
             if !isempty(versions)
                 latest = joinpath(pkg_dir, last(sort(versions)), "src")
                 if isdir(latest)
-                    return directory_complexity(latest; recursive=true, max_complexity=max_complexity)
+                    return directory_complexity(
+                        latest;
+                        recursive = true,
+                        max_complexity = max_complexity,
+                    )
                 end
             end
         end
     end
-    
+
     # Try to find in dev packages or current directory
     for path in LOAD_PATH
         if path isa AbstractString
             candidate = joinpath(path, pkg_name, "src")
             if isdir(candidate)
-                return directory_complexity(candidate; recursive=true, max_complexity=max_complexity)
+                return directory_complexity(
+                    candidate;
+                    recursive = true,
+                    max_complexity = max_complexity,
+                )
             end
             # Also try without src subdirectory
             candidate = joinpath(path, pkg_name)
             if isdir(candidate)
-                return directory_complexity(candidate; recursive=true, max_complexity=max_complexity)
+                return directory_complexity(
+                    candidate;
+                    recursive = true,
+                    max_complexity = max_complexity,
+                )
             end
         end
     end
-    
+
     throw(ArgumentError("Package not found: $pkg_name"))
 end
 
@@ -595,27 +633,39 @@ for fc in violations
 end
 ```
 """
-function check_complexity(path::AbstractString; max_complexity::Int=10, throw_on_violation::Bool=true)
+function check_complexity(
+    path::AbstractString;
+    max_complexity::Int = 10,
+    throw_on_violation::Bool = true,
+)
     violations = if isfile(path)
-        fc = file_complexity(path; max_complexity=max_complexity)
+        fc = file_complexity(path; max_complexity = max_complexity)
         isempty(fc.functions) ? FileComplexity[] : [fc]
     elseif isdir(path)
-        directory_complexity(path; recursive=true, max_complexity=max_complexity)
+        directory_complexity(path; recursive = true, max_complexity = max_complexity)
     else
         throw(ArgumentError("Path not found: $path"))
     end
-    
+
     _handle_violations(violations, max_complexity, throw_on_violation)
     return violations
 end
 
-function check_complexity(pkg::Module; max_complexity::Int=10, throw_on_violation::Bool=true)
-    violations = package_complexity(pkg; max_complexity=max_complexity)
+function check_complexity(
+    pkg::Module;
+    max_complexity::Int = 10,
+    throw_on_violation::Bool = true,
+)
+    violations = package_complexity(pkg; max_complexity = max_complexity)
     _handle_violations(violations, max_complexity, throw_on_violation)
     return violations
 end
 
-function _handle_violations(violations::Vector{FileComplexity}, max_complexity::Int, throw_on_violation::Bool)
+function _handle_violations(
+    violations::Vector{FileComplexity},
+    max_complexity::Int,
+    throw_on_violation::Bool,
+)
     if throw_on_violation && !isempty(violations)
         # Build error message
         msg = IOBuffer()
@@ -623,7 +673,10 @@ function _handle_violations(violations::Vector{FileComplexity}, max_complexity::
         for fc in violations
             for func in fc.functions
                 line_info = func.line > 0 ? ":$(func.line)" : ""
-                println(msg, "  $(fc.path)$line_info: $(func.name) has complexity $(func.complexity)")
+                println(
+                    msg,
+                    "  $(fc.path)$line_info: $(func.name) has complexity $(func.complexity)",
+                )
             end
         end
         error(String(take!(msg)))

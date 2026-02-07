@@ -1,0 +1,10 @@
+# Local formatting rules for CodeComplexity.jl
+# https://domluna.github.io/JuliaFormatter.jl/stable/config/
+
+indent = 4
+margin = 92
+always_for_in = true
+whitespace_typedefs = true
+whitespace_ops_in_indices = true
+remove_extra_newlines = false
+join_lines_based_on_source = true  # https://domluna.github.io/JuliaFormatter.jl/dev/#join_lines_based_on_source
