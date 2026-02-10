@@ -1,5 +1,7 @@
 module CodeComplexity
 
+using JuliaSyntax
+
 export cyclomatic_complexity,
     complexity_report,
     file_complexity,
@@ -246,18 +248,9 @@ function complexity_report(
     return _filter_by_complexity(functions, max_complexity)
 end
 
-# Parse code string into AST, handling different Julia versions and edge cases
+# Parse code string into AST using JuliaSyntax for robust parsing with error recovery
 function _parse_code(code::AbstractString)
-    # Try Meta.parseall first (available in Julia 1.9+) as it handles whole files better
-    if isdefined(Meta, :parseall)
-        try
-            return Meta.parseall(code)
-        catch
-            # Fall back to begin-end wrapping
-        end
-    end
-    # Fall back: wrap in begin...end block
-    return Meta.parse("begin\n$code\nend")
+    return JuliaSyntax.parseall(Expr, code; ignore_errors = true)
 end
 
 # Extract function definitions and their complexities
