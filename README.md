@@ -49,6 +49,23 @@ check_complexity(MyPackage; max_complexity=10)  # throws if any function exceeds
 violations = check_complexity("src/"; max_complexity=10, throw_on_violation=false)
 ```
 
+## Too many arguments (Ruff PLR0913–style)
+
+You can flag definitions whose **signatures** have more than a chosen number of parameters (positional slots plus keyword slots), in the spirit of Ruff’s [PLR0913](https://docs.astral.sh/ruff/rules/too-many-arguments/) / Pylint’s `max-args` (Ruff’s default is **5**).
+
+```julia
+argument_count_report(read("src/MyModule.jl", String))
+argument_count_report(code; max_args=5)   # only definitions with arg_count > 5
+
+file_argument_counts("src/MyModule.jl"; max_args=5)
+directory_argument_counts("src/"; max_args=5)
+package_argument_counts(CodeComplexity; max_args=5)
+
+check_argument_count("src/"; max_args=5)  # throws if any definition exceeds the limit
+```
+
+Types: **`FunctionArguments`** (`name`, `arg_count`, `line`) and **`FileArguments`** (`path`, `functions`, `total_arguments`).
+
 ## What is cyclomatic complexity?
 
 Cyclomatic complexity counts **decision points** in the control flow (plus one). Higher values mean more branches and usually harder-to-test or harder-to-follow code.
@@ -74,11 +91,18 @@ Minimum complexity is 1 (no branches). A single `if` gives 2; each extra branch 
 | `directory_complexity(dir; recursive=true, max_complexity=nothing)` | All `.jl` files in a directory |
 | `package_complexity(pkg_or_name; max_complexity=nothing)` | All source files of a package (module or name) |
 | `check_complexity(path_or_pkg; max_complexity=10, throw_on_violation=true)` | Assert no function exceeds the limit; useful in tests/CI |
+| `argument_count_report(code; max_args=nothing)` | Parameter count per definition; optional `max_args` filter (`arg_count > max_args`) |
+| `file_argument_counts(path; max_args=nothing)` | Same as above for one file |
+| `directory_argument_counts(dir; recursive=true, max_args=nothing)` | All `.jl` files in a directory |
+| `package_argument_counts(pkg_or_name; max_args=nothing)` | All package sources |
+| `check_argument_count(path_or_pkg; max_args=5, throw_on_violation=true)` | Assert no definition exceeds the parameter limit (default 5, like Ruff) |
 
 Types:
 
 - **`FunctionComplexity`**: `name`, `complexity`, `line`
 - **`FileComplexity`**: `path`, `functions`, `total_complexity`
+- **`FunctionArguments`**: `name`, `arg_count`, `line`
+- **`FileArguments`**: `path`, `functions`, `total_arguments`
 
 ## Use in tests and CI
 
