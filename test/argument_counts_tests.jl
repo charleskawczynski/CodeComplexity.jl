@@ -74,6 +74,79 @@
         @test viol[1].arg_count == 6
     end
 
+    @testset "ignore list" begin
+        code = """
+        function many(a,b,c,d,e,f) end
+        function few(a) end
+        macro six(a,b,c,d,e,f) end
+        """
+        r = argument_count_report(code; ignore = [:many])
+        @test length(r) == 2
+        @test Set(f.name for f in r) == Set(["few", "@six"])
+        @test !any(f -> f.name == "many", r)
+
+        viol = argument_count_report(code; max_args = 5, ignore = [:many, "@six"])
+        @test isempty(viol)
+
+        viol2 = argument_count_report(code; max_args = 5, ignore = ["@six"])
+        @test length(viol2) == 1
+        @test viol2[1].name == "many"
+
+        mktempdir() do tmpdir
+            file = joinpath(tmpdir, "ig.jl")
+            write(
+                file,
+                """
+function ok(a, b, c)
+    return a + b + c
+end
+function bad(a, b, c, d, e, f)
+    return 0
+end
+""",
+            )
+            @test isempty(
+                check_argument_count(file; max_args = 5, ignore = [:bad]),
+            )
+        end
+
+        M = Module(:IgnoreCallableTest)
+        Core.eval(
+            M,
+            quote
+                struct IgCtor end
+                function IgCtor(_a, _b, _c, _d, _e, _f)
+                    IgCtor()
+                end
+                function ig_big(_a, _b, _c, _d, _e, _f)
+                    nothing
+                end
+            end,
+        )
+        ig_big = getfield(M, :ig_big)
+        IgCtor = getfield(M, :IgCtor)
+        code_callable = """
+        struct IgCtor end
+        function IgCtor(_a, _b, _c, _d, _e, _f)
+            IgCtor()
+        end
+        function ig_big(_a, _b, _c, _d, _e, _f)
+            nothing
+        end
+        """
+        viol_c = argument_count_report(code_callable; max_args = 5)
+        @test length(viol_c) == 2
+        @test Set(f.name for f in viol_c) == Set(["IgCtor", "ig_big"])
+
+        @test isempty(
+            argument_count_report(
+                code_callable;
+                max_args = 5,
+                ignore = (ig_big, IgCtor),
+            ),
+        )
+    end
+
     @testset "FunctionArguments and FileArguments" begin
         fa = FunctionArguments("g", 7, 3)
         @test fa.name == "g" && fa.arg_count == 7 && fa.line == 3

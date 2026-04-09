@@ -66,6 +66,25 @@ check_argument_count("src/"; max_args=5)  # throws if any definition exceeds the
 
 Types: **`FunctionArguments`** (`name`, `arg_count`, `line`) and **`FileArguments`** (`path`, `functions`, `total_arguments`).
 
+### Ignoring definitions (`ignore`)
+
+All argument-count entry points accept optional **`ignore`**: an iterable of names or values that resolve to a name (see below). Ignored definitions are dropped **before** the `max_args` filter.
+
+```julia
+# Symbols / strings (macros use the "@name" form, e.g. "@generated")
+check_argument_count(MyPackage; max_args=5, ignore=(:legacy_api, "@my_macro"))
+
+# Functions, types / constructors, builtins — matched via nameof → same unqualified name as in source
+check_argument_count(MyPackage; max_args=5, ignore=(wide_options, MyStruct))
+```
+
+**Caveats**
+
+- Matching is by **unqualified name** only: every definition with that name is skipped, even across modules.
+- **Macros** usually have no convenient callable to pass; use `Symbol` or `String` with the stored form **`"@macroname"`**.
+- **Complex type objects** (e.g. `Union{Int,Nothing}`) use `nameof`; that string may not match a simple identifier in source—prefer symbols or strings when unsure.
+- **`->` lambdas** are reported as **`"<anonymous>"`** if you need to ignore them.
+
 ## What is cyclomatic complexity?
 
 Cyclomatic complexity counts **decision points** in the control flow (plus one). Higher values mean more branches and usually harder-to-test or harder-to-follow code.
@@ -91,11 +110,11 @@ Minimum complexity is 1 (no branches). A single `if` gives 2; each extra branch 
 | `directory_complexity(dir; recursive=true, max_complexity=nothing)` | All `.jl` files in a directory |
 | `package_complexity(pkg_or_name; max_complexity=nothing)` | All source files of a package (module or name) |
 | `check_complexity(path_or_pkg; max_complexity=10, throw_on_violation=true)` | Assert no function exceeds the limit; useful in tests/CI |
-| `argument_count_report(code; max_args=nothing)` | Parameter count per definition; optional `max_args` filter (`arg_count > max_args`) |
-| `file_argument_counts(path; max_args=nothing)` | Same as above for one file |
-| `directory_argument_counts(dir; recursive=true, max_args=nothing)` | All `.jl` files in a directory |
-| `package_argument_counts(pkg_or_name; max_args=nothing)` | All package sources |
-| `check_argument_count(path_or_pkg; max_args=5, throw_on_violation=true)` | Assert no definition exceeds the parameter limit (default 5, like Ruff) |
+| `argument_count_report(code; max_args=nothing, ignore=nothing)` | Parameter count per definition; optional `max_args` filter (`arg_count > max_args`); optional `ignore` |
+| `file_argument_counts(path; max_args=nothing, ignore=nothing)` | Same as above for one file |
+| `directory_argument_counts(dir; recursive=true, max_args=nothing, ignore=nothing)` | All `.jl` files in a directory |
+| `package_argument_counts(pkg_or_name; max_args=nothing, ignore=nothing)` | All package sources |
+| `check_argument_count(path_or_pkg; max_args=5, throw_on_violation=true, ignore=nothing)` | Assert no definition exceeds the parameter limit (default 5, like Ruff) |
 
 Types:
 
