@@ -45,21 +45,61 @@ function _filter_by_arg_count(
     return filter(f -> f.arg_count > max_args, functions)
 end
 
+function _argument_ignore_key(x)::String
+    if x isa Symbol || x isa AbstractString
+        return string(x)
+    elseif applicable(nameof, x)
+        return string(nameof(x))
+    else
+        return string(x)
+    end
+end
+
+function _argument_ignore_set(ignore)::Union{Nothing, Set{String}}
+    ignore === nothing && return nothing
+    return Set{String}(_argument_ignore_key(x) for x in ignore)
+end
+
+function _filter_by_ignored_names(
+    functions::Vector{FunctionArguments},
+    ignore_set::Union{Nothing, Set{String}},
+)
+    ignore_set === nothing && return functions
+    isempty(ignore_set) && return functions
+    return filter(f -> !(f.name in ignore_set), functions)
+end
+
 """
-    argument_count_report(code::AbstractString; max_args::Union{Int,Nothing}=nothing) -> Vector{FunctionArguments}
+    argument_count_report(code::AbstractString; max_args::Union{Int,Nothing}=nothing, ignore=nothing) -> Vector{FunctionArguments}
 
 Count parameters on each function-like definition in `code`. When `max_args` is set (default in
 [`check_argument_count`](@ref) is 5, matching Ruff’s `lint.pylint.max-args`), only definitions with
 `arg_count > max_args` are returned.
+
+If `ignore` is an iterable, those definitions are omitted before any `max_args` filter. Each entry is
+turned into a name string: `Symbol` / `AbstractString` use `string(x)`; any other `x` with
+`nameof(x)` defined (e.g. a `Function`, type / constructor `T`, or `Core.Builtin`) uses
+`string(nameof(x))`, matching how names appear in source. Macros still use the stored form
+`"@foo"` (e.g. `ignore=("@generated",)`). Lambdas are named `"<anonymous>"`.
+
+# Caveats
+
+- Matching is by **unqualified** name: the same name in any module is ignored.
+- **Macros** are usually passed as `Symbol` / `String` in the `"@name"` form; there is often no stable callable.
+- **Complex types** (e.g. `Union{...}`): `nameof` may not match a simple source identifier; prefer symbols/strings.
+- **`->` lambdas** use the name `"<anonymous>"` in reports and in `ignore`.
 
 See also: Ruff rule [PLR0913](https://docs.astral.sh/ruff/rules/too-many-arguments/).
 """
 function argument_count_report(
     code::AbstractString;
     max_args::Union{Int, Nothing} = nothing,
+    ignore = nothing,
 )
     expr = _parse_code(code)
     functions = _extract_argument_counts(expr)
+    ignore_set = _argument_ignore_set(ignore)
+    functions = _filter_by_ignored_names(functions, ignore_set)
     return _filter_by_arg_count(functions, max_args)
 end
 
@@ -193,24 +233,25 @@ function _extract_argument_counts(
 end
 
 """
-    file_argument_counts(filepath::AbstractString; max_args::Union{Int,Nothing}=nothing) -> FileArguments
+    file_argument_counts(filepath::AbstractString; max_args::Union{Int,Nothing}=nothing, ignore=nothing) -> FileArguments
 
 Like [`file_complexity`](@ref), but reports parameter counts per definition (PLR0913-style).
 """
 function file_argument_counts(
     filepath::AbstractString;
     max_args::Union{Int, Nothing} = nothing,
+    ignore = nothing,
 )
     if !isfile(filepath)
         throw(ArgumentError("File not found: $filepath"))
     end
     code = read(filepath, String)
-    functions = argument_count_report(code; max_args = max_args)
+    functions = argument_count_report(code; max_args = max_args, ignore = ignore)
     return FileArguments(filepath, functions)
 end
 
 """
-    directory_argument_counts(dirpath::AbstractString; recursive::Bool=true, max_args::Union{Int,Nothing}=nothing) -> Vector{FileArguments}
+    directory_argument_counts(dirpath::AbstractString; recursive::Bool=true, max_args::Union{Int,Nothing}=nothing, ignore=nothing) -> Vector{FileArguments}
 
 Like [`directory_complexity`](@ref), but for parameter-count analysis.
 """
@@ -218,6 +259,7 @@ function directory_argument_counts(
     dirpath::AbstractString;
     recursive::Bool = true,
     max_args::Union{Int, Nothing} = nothing,
+    ignore = nothing,
 )
     if !isdir(dirpath)
         throw(ArgumentError("Directory not found: $dirpath"))
@@ -231,7 +273,11 @@ function directory_argument_counts(
                 if endswith(file, ".jl")
                     filepath = joinpath(root, file)
                     try
-                        fa = file_argument_counts(filepath; max_args = max_args)
+                        fa = file_argument_counts(
+                            filepath;
+                            max_args = max_args,
+                            ignore = ignore,
+                        )
                         if max_args === nothing || !isempty(fa.functions)
                             push!(results, fa)
                         end
@@ -247,7 +293,11 @@ function directory_argument_counts(
                 filepath = joinpath(dirpath, file)
                 if isfile(filepath)
                     try
-                        fa = file_argument_counts(filepath; max_args = max_args)
+                        fa = file_argument_counts(
+                            filepath;
+                            max_args = max_args,
+                            ignore = ignore,
+                        )
                         if max_args === nothing || !isempty(fa.functions)
                             push!(results, fa)
                         end
@@ -263,27 +313,37 @@ function directory_argument_counts(
 end
 
 """
-    package_argument_counts(pkg::Module; max_args::Union{Int,Nothing}=nothing) -> Vector{FileArguments}
+    package_argument_counts(pkg::Module; max_args::Union{Int,Nothing}=nothing, ignore=nothing) -> Vector{FileArguments}
 
 Like [`package_complexity`](@ref), but for parameter counts.
 """
-function package_argument_counts(pkg::Module; max_args::Union{Int, Nothing} = nothing)
+function package_argument_counts(
+    pkg::Module;
+    max_args::Union{Int, Nothing} = nothing,
+    ignore = nothing,
+)
     pkg_path = pathof(pkg)
     if pkg_path === nothing
         throw(ArgumentError("Cannot determine source path for module $pkg"))
     end
     src_dir = dirname(pkg_path)
-    return directory_argument_counts(src_dir; recursive = true, max_args = max_args)
+    return directory_argument_counts(
+        src_dir;
+        recursive = true,
+        max_args = max_args,
+        ignore = ignore,
+    )
 end
 
 """
-    package_argument_counts(pkg_name::AbstractString; max_args::Union{Int,Nothing}=nothing) -> Vector{FileArguments}
+    package_argument_counts(pkg_name::AbstractString; max_args::Union{Int,Nothing}=nothing, ignore=nothing) -> Vector{FileArguments}
 
 Like [`package_complexity`](@ref) with a package name string, but for parameter counts.
 """
 function package_argument_counts(
     pkg_name::AbstractString;
     max_args::Union{Int, Nothing} = nothing,
+    ignore = nothing,
 )
     for depot in DEPOT_PATH
         pkg_dir = joinpath(depot, "packages", pkg_name)
@@ -296,6 +356,7 @@ function package_argument_counts(
                         latest;
                         recursive = true,
                         max_args = max_args,
+                        ignore = ignore,
                     )
                 end
             end
@@ -310,6 +371,7 @@ function package_argument_counts(
                     candidate;
                     recursive = true,
                     max_args = max_args,
+                    ignore = ignore,
                 )
             end
             candidate = joinpath(path, pkg_name)
@@ -318,6 +380,7 @@ function package_argument_counts(
                     candidate;
                     recursive = true,
                     max_args = max_args,
+                    ignore = ignore,
                 )
             end
         end
@@ -327,7 +390,7 @@ function package_argument_counts(
 end
 
 """
-    check_argument_count(path_or_pkg; max_args::Int=5, throw_on_violation::Bool=true) -> Vector{FileArguments}
+    check_argument_count(path_or_pkg; max_args::Int=5, throw_on_violation::Bool=true, ignore=nothing) -> Vector{FileArguments}
 
 Enforce a maximum parameter count per definition (Ruff PLR0913 / `lint.pylint.max-args` default: 5).
 Violations are definitions with `arg_count > max_args`.
@@ -336,6 +399,7 @@ Violations are definitions with `arg_count > max_args`.
 - `path_or_pkg`: File path, directory path, or loaded `Module`
 - `max_args::Int=5`: Allowed parameters; definitions with more are violations
 - `throw_on_violation::Bool=true`: If true, throw when any violation is found
+- `ignore`: Optional iterable of names or live callables/types to exclude (same as [`argument_count_report`](@ref); see its **Caveats** section)
 
 # Returns
 - `Vector{FileArguments}`: Files that contain violations (after filtering), or empty if none
@@ -344,12 +408,18 @@ function check_argument_count(
     path::AbstractString;
     max_args::Int = 5,
     throw_on_violation::Bool = true,
+    ignore = nothing,
 )
     violations = if isfile(path)
-        fa = file_argument_counts(path; max_args = max_args)
+        fa = file_argument_counts(path; max_args = max_args, ignore = ignore)
         isempty(fa.functions) ? FileArguments[] : [fa]
     elseif isdir(path)
-        directory_argument_counts(path; recursive = true, max_args = max_args)
+        directory_argument_counts(
+            path;
+            recursive = true,
+            max_args = max_args,
+            ignore = ignore,
+        )
     else
         throw(ArgumentError("Path not found: $path"))
     end
@@ -362,8 +432,9 @@ function check_argument_count(
     pkg::Module;
     max_args::Int = 5,
     throw_on_violation::Bool = true,
+    ignore = nothing,
 )
-    violations = package_argument_counts(pkg; max_args = max_args)
+    violations = package_argument_counts(pkg; max_args = max_args, ignore = ignore)
     _handle_argument_count_violations(violations, max_args, throw_on_violation)
     return violations
 end
