@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/charleskawczynski/CodeComplexity.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/charleskawczynski/CodeComplexity.jl/actions/workflows/ci.yml)
 
-Measure **cyclomatic complexity** of Julia code. Use it to find overly complex functions, enforce limits in tests or CI, and scan files, directories, or whole packages.
+Measure **cyclomatic complexity** and **cognitive complexity** of Julia code, plus detect **too-many-arguments** signatures. Use it to find overly complex functions, enforce limits in tests or CI, and scan files, directories, or whole packages.
 
 ## Installation
 
@@ -48,6 +48,43 @@ using MyPackage; package_complexity(MyPackage)
 check_complexity(MyPackage; max_complexity=10)  # throws if any function exceeds 10
 violations = check_complexity("src/"; max_complexity=10, throw_on_violation=false)
 ```
+
+## Cognitive complexity (Campbell / SonarSource)
+
+Cognitive complexity ([G. Ann Campbell, 2023](https://www.sonarsource.com/resources/cognitive-complexity/)) measures how hard a piece of code is to *understand*, as opposed to how many independent paths it has. It increments for breaks in linear flow, charges extra for nested flow-break structures, ignores `try` itself but counts `catch`, collapses runs of like `&&`/`||` into one increment, and adds one for direct recursion.
+
+```julia
+cognitive_complexity("""
+function sumOfPrimes(maxv)
+    total = 0
+    for i in 1:maxv          # +1
+        for j in 2:(i-1)     # +2 (nesting=1)
+            if i % j == 0    # +3 (nesting=2)
+                @goto out    # +1
+            end
+        end
+        total += i
+        @label out
+    end
+    return total
+end
+""")  # 7
+
+cognitive_complexity_report(read("src/MyModule.jl", String))
+file_cognitive_complexity("src/MyModule.jl"; max_complexity=15)
+directory_cognitive_complexity("src/"; max_complexity=15)
+package_cognitive_complexity(CodeComplexity; max_complexity=15)
+
+check_cognitive_complexity(MyPackage; max_complexity=15)  # SonarSource's recommended limit
+```
+
+Types: **`FunctionCognitiveComplexity`** (`name`, `complexity`, `line`) and **`FileCognitiveComplexity`** (`path`, `functions`, `total_complexity`).
+
+A few Julia-specific notes:
+
+- `cond ? a : b` and `if cond; a; else b end` parse to the *same* `:if` AST node, so the ternary operator is reported as if/else (`+1` for the `if` plus `+1` for the `else`) rather than the spec's single-increment ternary rule.
+- Direct recursion is detected by name; **indirect recursion** and calls through dotted names (e.g. `M.foo`) are not counted.
+- Comprehensions/generators are walked as plain expressions; nested `if`/`for` *inside* a comprehension do not add structural increments.
 
 ## Too many arguments (Ruff PLR0913–style)
 
@@ -110,6 +147,12 @@ Minimum complexity is 1 (no branches). A single `if` gives 2; each extra branch 
 | `directory_complexity(dir; recursive=true, max_complexity=nothing)` | All `.jl` files in a directory |
 | `package_complexity(pkg_or_name; max_complexity=nothing)` | All source files of a package (module or name) |
 | `check_complexity(path_or_pkg; max_complexity=10, throw_on_violation=true)` | Assert no function exceeds the limit; useful in tests/CI |
+| `cognitive_complexity(expr)` / `cognitive_complexity(code::String)` | Cognitive complexity (Campbell / SonarSource) of one expression or code string |
+| `cognitive_complexity_report(code; max_complexity=nothing)` | Per-function cognitive complexity for code string; optional threshold filter |
+| `file_cognitive_complexity(path; max_complexity=nothing)` | Per-function cognitive complexity for a file |
+| `directory_cognitive_complexity(dir; recursive=true, max_complexity=nothing)` | All `.jl` files in a directory |
+| `package_cognitive_complexity(pkg_or_name; max_complexity=nothing)` | All source files of a package |
+| `check_cognitive_complexity(path_or_pkg; max_complexity=15, throw_on_violation=true)` | Assert no function exceeds the cognitive limit (default 15, SonarSource's recommendation) |
 | `argument_count_report(code; max_args=nothing, ignore=nothing)` | Parameter count per definition; optional `max_args` filter (`arg_count > max_args`); optional `ignore` |
 | `file_argument_counts(path; max_args=nothing, ignore=nothing)` | Same as above for one file |
 | `directory_argument_counts(dir; recursive=true, max_args=nothing, ignore=nothing)` | All `.jl` files in a directory |
@@ -120,6 +163,8 @@ Types:
 
 - **`FunctionComplexity`**: `name`, `complexity`, `line`
 - **`FileComplexity`**: `path`, `functions`, `total_complexity`
+- **`FunctionCognitiveComplexity`**: `name`, `complexity`, `line`
+- **`FileCognitiveComplexity`**: `path`, `functions`, `total_complexity`
 - **`FunctionArguments`**: `name`, `arg_count`, `line`
 - **`FileArguments`**: `path`, `functions`, `total_arguments`
 

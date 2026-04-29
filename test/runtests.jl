@@ -5,6 +5,7 @@ using Aqua
 @testset "CodeComplexity" begin
     include("cyclomatic_complexity_tests.jl")
     include("argument_counts_tests.jl")
+    include("cognitive_complexity_tests.jl")
 end
 
 @testset "Aqua" begin
