@@ -9,10 +9,9 @@ API. Built-in metrics include:
 - **Cognitive complexity** (Campbell / SonarSource)
 - **Argument count** (Ruff `PLR0913`-style)
 
-…and the same entry points work for any user-defined metric (see
-[Adding a new metric](#adding-a-new-metric)). Use CodeComplexity.jl to
-find overly complex or oversized definitions, enforce limits in tests or
-CI, and scan files, directories, or whole packages.
+Use CodeComplexity.jl to find overly complex or oversized definitions,
+enforce limits in tests or CI, and scan files, directories, or whole
+packages.
 
 ## Installation
 
@@ -21,11 +20,9 @@ using Pkg
 Pkg.add("CodeComplexity")
 ```
 
-## Bringing the API into scope
+## One API, every metric
 
-CodeComplexity.jl deliberately exports nothing. Pull in only the names
-you use with explicit `import … :` lists; the README examples below
-assume the following at the top of each file:
+Every entry point dispatches on a metric singleton:
 
 ```julia
 import CodeComplexity:
@@ -43,13 +40,14 @@ import CodeComplexity:
     check_measure
 ```
 
-If you'd rather not list each name, `import CodeComplexity as CC` and
-qualify every call (e.g. `CC.measure(CC.CyclomaticComplexity(), code)`)
-works equivalently.
-
-## One API, every metric
-
-Every entry point dispatches on a metric singleton:
+The new `measure`-suffixed entry points are intentionally **not**
+exported, so new code pulls them in explicitly (above) or qualifies
+them via `import CodeComplexity as CC`. The previously-exported
+names — the metric singletons, the deprecated `*_complexity` verbs,
+the `Function*` / `File*` types, `cyclomatic_complexity`,
+`argument_count_report`, … — remain available via
+`using CodeComplexity` for backwards compatibility; deprecated verbs
+emit `Base.depwarn` notices that point at the new names.
 
 | Singleton | What it measures | Default threshold |
 |-----------|------------------|-------------------|
@@ -85,9 +83,13 @@ function foo(x)
 end
 """
 
-measure(CyclomaticComplexity(),    code)  # 2
-measure(CognitiveComplexity(),     code)  # 2
-measure(ArgumentCountComplexity(), code)  # 1
+measure(CyclomaticComplexity(), code)  # 2
+measure(CognitiveComplexity(),  code)  # 2
+
+# `measure(ArgumentCountComplexity(), …)` operates on a single function-
+# like expression, so use `measure_report` to score the definitions
+# inside a code string:
+measure_report(ArgumentCountComplexity(), code)[1].value  # 1
 
 # Per-definition reports
 measure_report(CyclomaticComplexity(), read("src/MyModule.jl", String))
@@ -313,8 +315,8 @@ forwards through the same way):
 The old field names (`.complexity`, `.arg_count`, `.total_complexity`,
 `.total_arguments`) on the parametric types are forwarded transparently
 to `.value` / `.total_value` for source compatibility. All deprecated
-names are accessible under the same `CodeComplexity.` namespace as the
-v3 API.
+names are also re-exported, so existing `using CodeComplexity` code
+continues to work without modification.
 
 ## Code style (JuliaFormatter)
 

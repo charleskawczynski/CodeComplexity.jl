@@ -15,7 +15,52 @@
 # `common.jl` / the per-metric files, with a `Base.depwarn`. New code
 # should use `measure`, `measure_report`, `file_measure`,
 # `directory_measure`, `package_measure`, and `check_measure` with an
-# explicit `AbstractMetric` argument. Nothing in this file is exported.
+# explicit `AbstractMetric` argument.
+#
+# To keep `using CodeComplexity` workflows from breaking, the entire
+# previous export surface is re-exported below. The new `measure`-
+# suffixed names are intentionally NOT exported — new code should pull
+# them in explicitly with `import CodeComplexity: measure, ...` or
+# qualify via `import CodeComplexity as CC`.
+
+export
+    # Metric singletons (still part of the public API, previously exported).
+    AbstractMetric,
+    CyclomaticComplexity,
+    CognitiveComplexity,
+    ArgumentCountComplexity,
+    # Internal traits (previously exported; new code should treat them
+    # as implementation details).
+    metric_label,
+    default_max_value,
+    # v2 result types and verbs (forward to the v3 `*Measure` types and
+    # `*_measure` verbs with `Base.depwarn`).
+    FunctionComplexity,
+    FileComplexity,
+    metric_complexity,
+    complexity_report,
+    file_complexity,
+    directory_complexity,
+    package_complexity,
+    check_complexity,
+    # v1 cognitive deprecations.
+    cyclomatic_complexity,
+    cognitive_complexity,
+    cognitive_complexity_report,
+    file_cognitive_complexity,
+    directory_cognitive_complexity,
+    package_cognitive_complexity,
+    check_cognitive_complexity,
+    FunctionCognitiveComplexity,
+    FileCognitiveComplexity,
+    # v1 argument-count deprecations.
+    argument_count_report,
+    file_argument_counts,
+    directory_argument_counts,
+    package_argument_counts,
+    check_argument_count,
+    FunctionArguments,
+    FileArguments
 
 # --- Type aliases ----------------------------------------------------------
 
