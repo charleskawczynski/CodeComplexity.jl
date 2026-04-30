@@ -10,85 +10,31 @@
 #     one increment, while `a && b || c` counts as two (matching the spec).
 
 """
-    FunctionCognitiveComplexity
+    measure(::CognitiveComplexity, expr) -> Int
 
-Per-function cognitive complexity score (Sonar/Campbell 2023).
-
-# Fields
-- `name::String`: Function (or macro) name; `"<anonymous>"` for `->` lambdas
-- `complexity::Int`: Cognitive complexity score (>= 0)
-- `line::Int`: Line of the definition (0 if unknown)
+Cognitive complexity (Campbell / SonarSource). Increments come from `if`,
+`elseif`, `else`, ternary, `for`/`while`, `catch`, each new sequence of
+like short-circuit operators, `@goto`, and direct recursion. Each level of
+nesting inside a control-flow structure adds an extra increment. Lambdas
+and nested function/macro definitions raise the nesting level for their
+body but do not add an increment themselves.
 """
-struct FunctionCognitiveComplexity
-    name::String
-    complexity::Int
-    line::Int
-end
-
-"""
-    FileCognitiveComplexity
-
-Cognitive-complexity summary for a source file.
-
-# Fields
-- `path::String`: File path
-- `functions::Vector{FunctionCognitiveComplexity}`: One entry per definition
-- `total_complexity::Int`: Sum of `complexity` over `functions`
-"""
-struct FileCognitiveComplexity
-    path::String
-    functions::Vector{FunctionCognitiveComplexity}
-    total_complexity::Int
-end
-
-function FileCognitiveComplexity(
-    path::String,
-    functions::Vector{FunctionCognitiveComplexity},
-)
-    total = sum(f.complexity for f in functions; init = 0)
-    FileCognitiveComplexity(path, functions, total)
-end
-
-"""
-    cognitive_complexity(expr) -> Int
-    cognitive_complexity(code::AbstractString) -> Int
-
-Compute the cognitive complexity of a Julia expression or code string.
-
-Cognitive complexity rewards code that reads top-to-bottom and penalises
-nesting and "shape changes". Increments come from:
-
-- `if`, `elseif`, `else`, ternary (`? :`)
-- `for`, `while` loops
-- `catch` clauses (the `try` block itself is free)
-- Each new sequence of like binary boolean operators (`&&` / `||`)
-- `@goto`
-- A function that calls itself (direct recursion)
-- Each level of nesting inside a control-flow structure
-
-Lambdas and nested `function`/`macro` definitions are not counted as increments
-themselves, but they raise the nesting level for their body.
-
-A function with no decisions has complexity 0 (unlike cyclomatic complexity,
-which has a base of 1).
-"""
-function cognitive_complexity(expr)
+function measure(::CognitiveComplexity, expr)
     return _cognitive_walk(expr, 0, false)
 end
 
-function cognitive_complexity(code::AbstractString)
-    return cognitive_complexity(_parse_code(code))
-end
+measure(metric::CognitiveComplexity, code::AbstractString) =
+    measure(metric, _parse_code(code))
 
-# Main dispatch: nesting is the depth inside structural control-flow; in_func
-# is true once we're already inside a function/lambda body so a further
-# function/lambda is treated as nested.
+# `nesting` is the depth inside structural control-flow; `in_func` is true
+# once we are inside a function/lambda body so a further function/lambda is
+# treated as nested.
 function _cognitive_walk(expr, nesting::Int, in_func::Bool)
     expr isa Expr || return 0
     return _cognitive_for_head(Val(expr.head), expr, nesting, in_func)
 end
 
-function _walk_args(args, nesting::Int, in_func::Bool)
+function _cognitive_walk_args(args, nesting::Int, in_func::Bool)
     c = 0
     for a in args
         c += _cognitive_walk(a, nesting, in_func)
@@ -97,7 +43,7 @@ function _walk_args(args, nesting::Int, in_func::Bool)
 end
 
 _cognitive_for_head(::Val, expr::Expr, nesting, in_func) =
-    _walk_args(expr.args, nesting, in_func)
+    _cognitive_walk_args(expr.args, nesting, in_func)
 
 # --- function-like definitions ---------------------------------------------
 
@@ -117,15 +63,7 @@ function _cognitive_for_head(::Val{:(=)}, expr::Expr, nesting, in_func)
     if _is_short_function(expr)
         return _walk_funclike_body(expr, 2, nesting, in_func; check_recursion = true)
     end
-    return _walk_args(expr.args, nesting, in_func)
-end
-
-function _is_short_function(expr::Expr)
-    expr.head === :(=) || return false
-    length(expr.args) >= 1 || return false
-    a1 = expr.args[1]
-    a1 isa Expr || return false
-    return a1.head === :call || a1.head === :where
+    return _cognitive_walk_args(expr.args, nesting, in_func)
 end
 
 function _walk_funclike_body(
@@ -179,8 +117,7 @@ function _walk_if_like(args, nesting::Int, in_func::Bool; structural::Bool)
     end
     if else_branch !== nothing
         if has_elif
-            # Pass through `elseif` at the same nesting (no nesting increment
-            # for the `elseif`/`else` keywords themselves).
+            # `elseif` is at the same nesting (no nesting bump for the keyword).
             c += _cognitive_walk(else_branch, nesting, in_func)
         else
             c += _cognitive_walk(else_branch, inner_nesting, in_func)
@@ -201,7 +138,7 @@ end
 
 function _walk_loop(args, nesting::Int, in_func::Bool)
     base = 1 + nesting
-    return base + _walk_args(args, nesting + 1, in_func)
+    return base + _cognitive_walk_args(args, nesting + 1, in_func)
 end
 
 # --- try / catch -----------------------------------------------------------
@@ -312,278 +249,10 @@ function _contains_call_to(expr, target::Symbol)
     return false
 end
 
-# --- reports / file-walking utilities --------------------------------------
+# --- error-message overrides ----------------------------------------------
 
-function _filter_by_cognitive_complexity(
-    functions::Vector{FunctionCognitiveComplexity},
-    max_complexity::Union{Int, Nothing},
-)
-    max_complexity === nothing && return functions
-    return filter(f -> f.complexity > max_complexity, functions)
-end
+_violation_header(::CognitiveComplexity, max_value) =
+    "Cognitive complexity violations (max_complexity=$max_value):"
 
-"""
-    cognitive_complexity_report(code::AbstractString; max_complexity=nothing)
-        -> Vector{FunctionCognitiveComplexity}
-
-Cognitive complexity for each top-level definition in `code`. When
-`max_complexity` is set, only definitions with `complexity > max_complexity`
-are returned.
-"""
-function cognitive_complexity_report(
-    code::AbstractString;
-    max_complexity::Union{Int, Nothing} = nothing,
-)
-    expr = _parse_code(code)
-    functions = _extract_cognitive_complexities(expr)
-    return _filter_by_cognitive_complexity(functions, max_complexity)
-end
-
-function _extract_cognitive_complexities(
-    expr,
-    results::Vector{FunctionCognitiveComplexity} = FunctionCognitiveComplexity[],
-)
-    if expr isa Expr
-        if expr.head === :function || expr.head === :(=)
-            name, is_func = _get_function_name(expr)
-            if is_func
-                comp = cognitive_complexity(expr)
-                line = _get_line_number(expr)
-                push!(results, FunctionCognitiveComplexity(name, comp, line))
-            else
-                for arg in expr.args
-                    _extract_cognitive_complexities(arg, results)
-                end
-            end
-        elseif expr.head === :->
-            comp = cognitive_complexity(expr)
-            line = _get_line_number(expr)
-            push!(results, FunctionCognitiveComplexity("<anonymous>", comp, line))
-        elseif expr.head === :macro
-            if length(expr.args) >= 1
-                name = "@" * string(_extract_name(expr.args[1]))
-                comp = cognitive_complexity(expr)
-                line = _get_line_number(expr)
-                push!(results, FunctionCognitiveComplexity(name, comp, line))
-            end
-        else
-            for arg in expr.args
-                _extract_cognitive_complexities(arg, results)
-            end
-        end
-    end
-    return results
-end
-
-"""
-    file_cognitive_complexity(filepath; max_complexity=nothing) -> FileCognitiveComplexity
-
-Like [`file_complexity`](@ref) but reports cognitive complexity per definition.
-"""
-function file_cognitive_complexity(
-    filepath::AbstractString;
-    max_complexity::Union{Int, Nothing} = nothing,
-)
-    if !isfile(filepath)
-        throw(ArgumentError("File not found: $filepath"))
-    end
-    code = read(filepath, String)
-    functions = cognitive_complexity_report(code; max_complexity = max_complexity)
-    return FileCognitiveComplexity(filepath, functions)
-end
-
-"""
-    directory_cognitive_complexity(dirpath; recursive=true, max_complexity=nothing)
-        -> Vector{FileCognitiveComplexity}
-
-Like [`directory_complexity`](@ref) but for cognitive complexity.
-"""
-function directory_cognitive_complexity(
-    dirpath::AbstractString;
-    recursive::Bool = true,
-    max_complexity::Union{Int, Nothing} = nothing,
-)
-    if !isdir(dirpath)
-        throw(ArgumentError("Directory not found: $dirpath"))
-    end
-
-    results = FileCognitiveComplexity[]
-    paths = _collect_jl_files(dirpath, recursive)
-    for filepath in paths
-        try
-            fc = file_cognitive_complexity(filepath; max_complexity = max_complexity)
-            if max_complexity === nothing || !isempty(fc.functions)
-                push!(results, fc)
-            end
-        catch e
-            @warn "Failed to analyze $filepath" exception = e
-        end
-    end
-    return results
-end
-
-function _collect_jl_files(dirpath::AbstractString, recursive::Bool)
-    paths = String[]
-    if recursive
-        for (root, _, files) in walkdir(dirpath)
-            for file in files
-                endswith(file, ".jl") && push!(paths, joinpath(root, file))
-            end
-        end
-    else
-        for file in readdir(dirpath)
-            endswith(file, ".jl") || continue
-            filepath = joinpath(dirpath, file)
-            isfile(filepath) && push!(paths, filepath)
-        end
-    end
-    return paths
-end
-
-"""
-    package_cognitive_complexity(pkg; max_complexity=nothing) -> Vector{FileCognitiveComplexity}
-
-Like [`package_complexity`](@ref) but for cognitive complexity. Accepts either
-a loaded `Module` or a package name string.
-"""
-function package_cognitive_complexity(
-    pkg::Module;
-    max_complexity::Union{Int, Nothing} = nothing,
-)
-    pkg_path = pathof(pkg)
-    if pkg_path === nothing
-        throw(ArgumentError("Cannot determine source path for module $pkg"))
-    end
-    src_dir = dirname(pkg_path)
-    return directory_cognitive_complexity(
-        src_dir;
-        recursive = true,
-        max_complexity = max_complexity,
-    )
-end
-
-function package_cognitive_complexity(
-    pkg_name::AbstractString;
-    max_complexity::Union{Int, Nothing} = nothing,
-)
-    for depot in DEPOT_PATH
-        pkg_dir = joinpath(depot, "packages", pkg_name)
-        if isdir(pkg_dir)
-            versions = readdir(pkg_dir)
-            if !isempty(versions)
-                latest = joinpath(pkg_dir, last(sort(versions)), "src")
-                if isdir(latest)
-                    return directory_cognitive_complexity(
-                        latest;
-                        recursive = true,
-                        max_complexity = max_complexity,
-                    )
-                end
-            end
-        end
-    end
-
-    for path in LOAD_PATH
-        if path isa AbstractString
-            candidate = joinpath(path, pkg_name, "src")
-            if isdir(candidate)
-                return directory_cognitive_complexity(
-                    candidate;
-                    recursive = true,
-                    max_complexity = max_complexity,
-                )
-            end
-            candidate = joinpath(path, pkg_name)
-            if isdir(candidate)
-                return directory_cognitive_complexity(
-                    candidate;
-                    recursive = true,
-                    max_complexity = max_complexity,
-                )
-            end
-        end
-    end
-
-    throw(ArgumentError("Package not found: $pkg_name"))
-end
-
-"""
-    check_cognitive_complexity(path_or_pkg; max_complexity=15, throw_on_violation=true)
-        -> Vector{FileCognitiveComplexity}
-
-Assert that no function exceeds the given cognitive-complexity threshold
-(SonarSource recommends 15). Mirrors [`check_complexity`](@ref).
-"""
-function check_cognitive_complexity(
-    path::AbstractString;
-    max_complexity::Int = 15,
-    throw_on_violation::Bool = true,
-)
-    violations = if isfile(path)
-        fc = file_cognitive_complexity(path; max_complexity = max_complexity)
-        isempty(fc.functions) ? FileCognitiveComplexity[] : [fc]
-    elseif isdir(path)
-        directory_cognitive_complexity(
-            path;
-            recursive = true,
-            max_complexity = max_complexity,
-        )
-    else
-        throw(ArgumentError("Path not found: $path"))
-    end
-
-    _handle_cognitive_violations(violations, max_complexity, throw_on_violation)
-    return violations
-end
-
-function check_cognitive_complexity(
-    pkg::Module;
-    max_complexity::Int = 15,
-    throw_on_violation::Bool = true,
-)
-    violations = package_cognitive_complexity(pkg; max_complexity = max_complexity)
-    _handle_cognitive_violations(violations, max_complexity, throw_on_violation)
-    return violations
-end
-
-function _handle_cognitive_violations(
-    violations::Vector{FileCognitiveComplexity},
-    max_complexity::Int,
-    throw_on_violation::Bool,
-)
-    if throw_on_violation && !isempty(violations)
-        msg = IOBuffer()
-        println(
-            msg,
-            "Cognitive complexity violations (max_complexity=$max_complexity):",
-        )
-        for fc in violations
-            for func in fc.functions
-                line_info = func.line > 0 ? ":$(func.line)" : ""
-                println(
-                    msg,
-                    "  $(fc.path)$line_info: $(func.name) has complexity $(func.complexity)",
-                )
-            end
-        end
-        error(String(take!(msg)))
-    end
-end
-
-function Base.show(io::IO, fc::FunctionCognitiveComplexity)
-    line_info = fc.line > 0 ? " (line $(fc.line))" : ""
-    print(
-        io,
-        "FunctionCognitiveComplexity(\"$(fc.name)\", complexity=$(fc.complexity)$line_info)",
-    )
-end
-
-function Base.show(io::IO, ::MIME"text/plain", fc::FileCognitiveComplexity)
-    println(io, "FileCognitiveComplexity: $(fc.path)")
-    println(io, "  Total cognitive complexity: $(fc.total_complexity)")
-    println(io, "  Functions ($(length(fc.functions))):")
-    for func in fc.functions
-        line_info = func.line > 0 ? " (line $(func.line))" : ""
-        println(io, "    $(func.name): $(func.complexity)$line_info")
-    end
-end
+_violation_line(::CognitiveComplexity, path, func, line_info) =
+    "$path$line_info: $(func.name) has complexity $(func.value)"

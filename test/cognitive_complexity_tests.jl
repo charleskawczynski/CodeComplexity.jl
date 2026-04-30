@@ -1,4 +1,8 @@
-# Included from runtests.jl — cognitive complexity metric, reports, and check_cognitive_complexity.
+# Included from runtests.jl — cognitive-complexity correctness tests
+# exercised through the v3 API.
+
+const COG = CC.CognitiveComplexity()
+cog_measure(x) = CC.measure(COG, x)
 
 @testset "Cognitive: trivial cases" begin
     @testset "trivial function" begin
@@ -7,7 +11,7 @@
             return nothing
         end
         """
-        @test cognitive_complexity(code) == 0
+        @test cog_measure(code) == 0
     end
 
     @testset "sequential statements" begin
@@ -18,11 +22,11 @@
             return s
         end
         """
-        @test cognitive_complexity(code) == 0
+        @test cog_measure(code) == 0
     end
 
     @testset "short form function" begin
-        @test cognitive_complexity("f(x) = x + 1") == 0
+        @test cog_measure("f(x) = x + 1") == 0
     end
 end
 
@@ -35,7 +39,7 @@ end
             end
         end
         """
-        @test cognitive_complexity(code) == 1
+        @test cog_measure(code) == 1
     end
 
     @testset "if-else (+1 hybrid for else)" begin
@@ -48,7 +52,7 @@ end
             end
         end
         """
-        @test cognitive_complexity(code) == 2
+        @test cog_measure(code) == 2
     end
 
     @testset "if-elseif (+1 each)" begin
@@ -61,7 +65,7 @@ end
             end
         end
         """
-        @test cognitive_complexity(code) == 2
+        @test cog_measure(code) == 2
     end
 
     @testset "if-elseif-else" begin
@@ -76,7 +80,7 @@ end
             end
         end
         """
-        @test cognitive_complexity(code) == 3
+        @test cog_measure(code) == 3
     end
 
     @testset "nested if (nesting increment)" begin
@@ -89,8 +93,7 @@ end
             end
         end
         """
-        # outer if: +1, inner if: +1+1 nesting = +2 → total 3
-        @test cognitive_complexity(code) == 3
+        @test cog_measure(code) == 3
     end
 
     @testset "deeply nested ifs" begin
@@ -105,8 +108,7 @@ end
             end
         end
         """
-        # +1, +2, +3 → 6
-        @test cognitive_complexity(code) == 6
+        @test cog_measure(code) == 6
     end
 end
 
@@ -119,7 +121,7 @@ end
             end
         end
         """
-        @test cognitive_complexity(code) == 1
+        @test cog_measure(code) == 1
     end
 
     @testset "nested for" begin
@@ -132,8 +134,7 @@ end
             end
         end
         """
-        # +1 + (+1+1) = 3
-        @test cognitive_complexity(code) == 3
+        @test cog_measure(code) == 3
     end
 
     @testset "triple nested for" begin
@@ -148,8 +149,7 @@ end
             end
         end
         """
-        # +1 + +2 + +3 = 6
-        @test cognitive_complexity(code) == 6
+        @test cog_measure(code) == 6
     end
 
     @testset "while" begin
@@ -160,7 +160,7 @@ end
             end
         end
         """
-        @test cognitive_complexity(code) == 1
+        @test cog_measure(code) == 1
     end
 
     @testset "for with if (nesting)" begin
@@ -173,33 +173,31 @@ end
             end
         end
         """
-        # +1 for + (+1+1 if nested) = 3
-        @test cognitive_complexity(code) == 3
+        @test cog_measure(code) == 3
     end
 end
 
 @testset "Cognitive: short-circuit boolean sequences" begin
     @testset "single &&" begin
-        @test cognitive_complexity("a && b") == 1
+        @test cog_measure("a && b") == 1
     end
 
     @testset "chained && counts as one sequence" begin
-        @test cognitive_complexity("a && b && c") == 1
-        @test cognitive_complexity("a && b && c && d") == 1
+        @test cog_measure("a && b && c") == 1
+        @test cog_measure("a && b && c && d") == 1
     end
 
     @testset "chained || counts as one sequence" begin
-        @test cognitive_complexity("a || b || c || d") == 1
+        @test cog_measure("a || b || c || d") == 1
     end
 
     @testset "mixed && and || → two sequences" begin
-        @test cognitive_complexity("a && b || c") == 2
-        @test cognitive_complexity("a || b && c") == 2
+        @test cog_measure("a && b || c") == 2
+        @test cog_measure("a || b && c") == 2
     end
 
     @testset "negation does not collapse sequences" begin
-        # Whitepaper example: a && !(b && c) → 2
-        @test cognitive_complexity("a && !(b && c)") == 2
+        @test cog_measure("a && !(b && c)") == 2
     end
 
     @testset "if with boolean condition" begin
@@ -210,8 +208,7 @@ end
             end
         end
         """
-        # +1 if + +1 single && sequence = 2
-        @test cognitive_complexity(code) == 2
+        @test cog_measure(code) == 2
     end
 
     @testset "if with mixed boolean condition" begin
@@ -222,24 +219,20 @@ end
             end
         end
         """
-        # +1 if + sequences (||, &&, &&) = 1 + 3 = 4. Right-assoc: ||(&&(a,b), &&(c,d)) → top || (+1), each && (+1 each) = 3 sequences.
-        @test cognitive_complexity(code) == 4
+        @test cog_measure(code) == 4
     end
 end
 
 @testset "Cognitive: ternary" begin
     @testset "simple ternary" begin
-        # Note: Julia's parser converts `a ? b : c` to an `if … else … end` AST node,
-        # so we report it as if/else (+1 if, +1 else) rather than the paper's
-        # single-increment ternary rule.
-        @test cognitive_complexity("x > 0 ? x : -x") == 2
+        # Julia parses `a ? b : c` as `if … else … end`, so it scores like
+        # if/else (+1 if, +1 else) rather than the paper's single-increment
+        # ternary rule.
+        @test cog_measure("x > 0 ? x : -x") == 2
     end
 
     @testset "nested ternary" begin
-        # outer if/else: +2 (top-level), inner if/else inside else branch: +2 nested + +1 hybrid = 4? Let's compute:
-        # outer if at 0: base = 1+0+1(else) = 2. then-branch nesting=1.
-        # else-branch: nested ternary → if at nesting=1: base = 1+1+1(else)=3. → total 5.
-        @test cognitive_complexity("x > 0 ? x : (y > 0 ? y : -y)") == 5
+        @test cog_measure("x > 0 ? x : (y > 0 ? y : -y)") == 5
     end
 end
 
@@ -254,7 +247,7 @@ end
             end
         end
         """
-        @test cognitive_complexity(code) == 0
+        @test cog_measure(code) == 0
     end
 
     @testset "try with catch" begin
@@ -267,12 +260,10 @@ end
             end
         end
         """
-        @test cognitive_complexity(code) == 1
+        @test cog_measure(code) == 1
     end
 
     @testset "catch with nested if (whitepaper-style)" begin
-        # void myMethod () { try { if (c1) { for { while {…} } } } catch { if (c2) … } }
-        # → 1 + 2 + 3 + 1 + 2 = 9
         code = """
         function myMethod()
             try
@@ -290,7 +281,7 @@ end
             end
         end
         """
-        @test cognitive_complexity(code) == 9
+        @test cog_measure(code) == 9
     end
 end
 
@@ -305,8 +296,7 @@ end
             end
         end
         """
-        # if/else: 2; recursion: +1 → 3
-        @test cognitive_complexity(code) == 3
+        @test cog_measure(code) == 3
     end
 
     @testset "non-recursive identical shape" begin
@@ -319,11 +309,11 @@ end
             end
         end
         """
-        @test cognitive_complexity(code) == 2
+        @test cog_measure(code) == 2
     end
 
     @testset "short-form recursion" begin
-        @test cognitive_complexity("f(n) = n <= 1 ? 1 : n * f(n - 1)") == 3
+        @test cog_measure("f(n) = n <= 1 ? 1 : n * f(n - 1)") == 3
     end
 end
 
@@ -341,8 +331,8 @@ end
         return nothing
     end
     """
-    # for(+1) + for(+2) + if(+3) + @goto(+1) = 7  (matches sumOfPrimes example from spec)
-    @test cognitive_complexity(code) == 7
+    # for(+1) + for(+2) + if(+3) + @goto(+1) = 7 (matches sumOfPrimes from spec)
+    @test cog_measure(code) == 7
 end
 
 @testset "Cognitive: lambdas and nested functions" begin
@@ -356,12 +346,11 @@ end
             end
         end
         """
-        # Lambda body if: +1 + 1 nesting = 2
-        @test cognitive_complexity(code) == 2
+        @test cog_measure(code) == 2
     end
 
     @testset "top-level lambda body counted at nesting 0" begin
-        @test cognitive_complexity("x -> x > 0 ? x : -x") == 2
+        @test cog_measure("x -> x > 0 ? x : -x") == 2
     end
 
     @testset "nested function adds nesting" begin
@@ -373,11 +362,11 @@ end
             end
         end
         """
-        @test cognitive_complexity(code) == 2
+        @test cog_measure(code) == 2
     end
 end
 
-@testset "cognitive_complexity_report" begin
+@testset "Cognitive: measure_report" begin
     @testset "multiple functions" begin
         code = """
         function trivial()
@@ -398,9 +387,9 @@ end
             end
         end
         """
-        report = cognitive_complexity_report(code)
+        report = CC.measure_report(COG, code)
         @test length(report) == 3
-        d = Dict(r.name => r.complexity for r in report)
+        d = Dict(r.name => r.value for r in report)
         @test d["trivial"] == 0
         @test d["with_if"] == 1
         @test d["with_loop_and_if"] == 3
@@ -420,22 +409,22 @@ end
             end
         end
         """
-        report = cognitive_complexity_report(code)
+        report = CC.measure_report(COG, code)
         @test length(report) == 2
-        d = Dict(r.name => r.complexity for r in report)
+        d = Dict(r.name => r.value for r in report)
         @test d["@simple"] == 0
         @test d["@with_if"] == 2
     end
 
     @testset "anonymous function" begin
         code = "f = x -> x > 0 ? x : -x"
-        report = cognitive_complexity_report(code)
+        report = CC.measure_report(COG, code)
         @test length(report) == 1
         @test report[1].name == "<anonymous>"
-        @test report[1].complexity == 2
+        @test report[1].value == 2
     end
 
-    @testset "max_complexity filter" begin
+    @testset "max_value filter" begin
         code = """
         function low()
             return 1
@@ -451,23 +440,22 @@ end
             end
         end
         """
-        # high cognitive: 1+2+3 = 6
-        all_report = cognitive_complexity_report(code)
+        all_report = CC.measure_report(COG, code)
         @test length(all_report) == 2
 
-        filtered = cognitive_complexity_report(code; max_complexity = 3)
+        filtered = CC.measure_report(COG, code; max_value = 3)
         @test length(filtered) == 1
         @test filtered[1].name == "high"
-        @test filtered[1].complexity == 6
+        @test filtered[1].value == 6
 
-        @test isempty(cognitive_complexity_report(code; max_complexity = 100))
+        @test isempty(CC.measure_report(COG, code; max_value = 100))
     end
 end
 
-@testset "FunctionCognitiveComplexity / FileCognitiveComplexity" begin
-    f = FunctionCognitiveComplexity("foo", 7, 12)
+@testset "Cognitive: FunctionMeasure / FileMeasure structs" begin
+    f = CC.FunctionMeasure{CC.CognitiveComplexity}("foo", 7, 12)
     @test f.name == "foo"
-    @test f.complexity == 7
+    @test f.value == 7
     @test f.line == 12
 
     io = IOBuffer()
@@ -476,18 +464,18 @@ end
     @test occursin("foo", out)
     @test occursin("7", out)
 
-    fc = FileCognitiveComplexity(
+    fc = CC.FileMeasure{CC.CognitiveComplexity}(
         "x.jl",
         [
-            FunctionCognitiveComplexity("a", 2, 1),
-            FunctionCognitiveComplexity("b", 5, 10),
+            CC.FunctionMeasure{CC.CognitiveComplexity}("a", 2, 1),
+            CC.FunctionMeasure{CC.CognitiveComplexity}("b", 5, 10),
         ],
     )
     @test fc.path == "x.jl"
-    @test fc.total_complexity == 7
+    @test fc.total_value == 7
 end
 
-@testset "file/directory/check cognitive_complexity" begin
+@testset "Cognitive: file/directory/check_measure" begin
     mktempdir() do tmpdir
         good = joinpath(tmpdir, "good.jl")
         write(
@@ -516,79 +504,74 @@ end
 """,
         )
 
-        @testset "file_cognitive_complexity" begin
-            fc = file_cognitive_complexity(good)
+        @testset "file_measure" begin
+            fc = CC.file_measure(COG, good)
             @test fc.path == good
             @test length(fc.functions) == 1
-            @test fc.functions[1].complexity == 0
+            @test fc.functions[1].value == 0
 
-            fc = file_cognitive_complexity(bad)
+            fc = CC.file_measure(COG, bad)
             @test length(fc.functions) == 1
             @test fc.functions[1].name == "nested"
-            @test fc.functions[1].complexity == 6
-            @test fc.total_complexity == 6
+            @test fc.functions[1].value == 6
+            @test fc.total_value == 6
         end
 
-        @testset "file_cognitive_complexity max_complexity" begin
-            fc = file_cognitive_complexity(bad; max_complexity = 3)
+        @testset "file_measure max_value" begin
+            fc = CC.file_measure(COG, bad; max_value = 3)
             @test length(fc.functions) == 1
 
-            fc = file_cognitive_complexity(bad; max_complexity = 100)
+            fc = CC.file_measure(COG, bad; max_value = 100)
             @test isempty(fc.functions)
-            @test fc.total_complexity == 0
+            @test fc.total_value == 0
         end
 
         @testset "file not found" begin
-            @test_throws ArgumentError file_cognitive_complexity("nope.jl")
+            @test_throws ArgumentError CC.file_measure(COG, "nope.jl")
         end
 
-        @testset "directory_cognitive_complexity" begin
-            results = directory_cognitive_complexity(tmpdir)
+        @testset "directory_measure" begin
+            results = CC.directory_measure(COG, tmpdir)
             @test length(results) == 2
 
-            results =
-                directory_cognitive_complexity(tmpdir; max_complexity = 3)
+            results = CC.directory_measure(COG, tmpdir; max_value = 3)
             @test length(results) == 1
             @test occursin("bad.jl", results[1].path)
 
-            @test_throws ArgumentError directory_cognitive_complexity("missing")
+            @test_throws ArgumentError CC.directory_measure(COG, "missing")
         end
 
-        @testset "check_cognitive_complexity violates" begin
-            @test_throws ErrorException check_cognitive_complexity(
+        @testset "check_measure violates" begin
+            @test_throws ErrorException CC.check_measure(COG, bad; max_value = 3)
+            v = CC.check_measure(
+                COG,
                 bad;
-                max_complexity = 3,
-            )
-            v = check_cognitive_complexity(
-                bad;
-                max_complexity = 3,
+                max_value = 3,
                 throw_on_violation = false,
             )
             @test length(v) == 1
         end
 
-        @testset "check_cognitive_complexity ok" begin
-            v = check_cognitive_complexity(good; max_complexity = 5)
+        @testset "check_measure ok" begin
+            v = CC.check_measure(COG, good; max_value = 5)
             @test isempty(v)
         end
 
-        @testset "check_cognitive_complexity directory" begin
-            @test_throws ErrorException check_cognitive_complexity(
+        @testset "check_measure directory" begin
+            @test_throws ErrorException CC.check_measure(COG, tmpdir; max_value = 3)
+            v = CC.check_measure(
+                COG,
                 tmpdir;
-                max_complexity = 3,
-            )
-            v = check_cognitive_complexity(
-                tmpdir;
-                max_complexity = 3,
+                max_value = 3,
                 throw_on_violation = false,
             )
             @test length(v) == 1
             @test occursin("bad.jl", v[1].path)
         end
 
-        @testset "check_cognitive_complexity error message" begin
+        @testset "check_measure error message" begin
             err = try
-                check_cognitive_complexity(bad; max_complexity = 3)
+                CC.check_measure(COG, bad; max_value = 3)
                 nothing
             catch e
                 e
@@ -599,17 +582,13 @@ end
             @test occursin("complexity 6", err.msg)
         end
 
-        @testset "check_cognitive_complexity path not found" begin
-            @test_throws ArgumentError check_cognitive_complexity("nope_path")
+        @testset "check_measure path not found" begin
+            @test_throws ArgumentError CC.check_measure(COG, "nope_path")
         end
     end
 end
 
-@testset "package_cognitive_complexity" begin
-    v = check_cognitive_complexity(
-        CodeComplexity;
-        max_complexity = 50,
-        throw_on_violation = false,
-    )
-    @test v isa Vector{FileCognitiveComplexity}
+@testset "Cognitive: package_measure" begin
+    v = CC.check_measure(COG, CC; max_value = 50, throw_on_violation = false)
+    @test v isa Vector{<:CC.FileMeasure}
 end

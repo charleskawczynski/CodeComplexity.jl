@@ -1,7 +1,12 @@
-# Included from runtests.jl — PLR0913-style parameter counts and check_argument_count.
+# Included from runtests.jl — PLR0913-style parameter counts and
+# `check_measure` for `ArgumentCountComplexity`, exercised through the v3
+# qualified API.
+
+const ARGC = CC.ArgumentCountComplexity()
+arg_measure(x) = CC.measure(ARGC, x)
 
 @testset "Argument count (PLR0913-style)" begin
-    @testset "argument_count_report counting" begin
+    @testset "measure_report counting" begin
         code = """
         function six_pos(a, b, c, d, e, f)
             return nothing
@@ -31,8 +36,8 @@
             return esc(x)
         end
         """
-        r = argument_count_report(code)
-        byname = Dict(f.name => f.arg_count for f in r)
+        r = CC.measure_report(ARGC, code)
+        byname = Dict(f.name => f.value for f in r)
         @test byname["six_pos"] == 6
         @test byname["kwonly"] == 3
         @test byname["mixed"] == 3
@@ -46,32 +51,33 @@
         @test byname["@mac2"] == 2
     end
 
-    @testset "argument_count_report lambda lhs shapes" begin
-        r = argument_count_report(
+    @testset "measure_report lambda lhs shapes" begin
+        r = CC.measure_report(
+            ARGC,
             "(t, u) -> t + u\nw -> w\ng(a, b) -> a\n(a, b; c = 1) -> a\n",
         )
-        @test sort([x.arg_count for x in r]) == [1, 2, 2, 3]
+        @test sort([x.value for x in r]) == [1, 2, 2, 3]
     end
 
-    @testset "argument_count_report anonymous definitions" begin
+    @testset "measure_report anonymous definitions" begin
         code = """
         (a, b) -> a + b
         x -> x
         """
-        r = argument_count_report(code)
+        r = CC.measure_report(ARGC, code)
         @test length(r) == 2
-        counts = sort([f.arg_count for f in r])
+        counts = sort([f.value for f in r])
         @test counts == [1, 2]
     end
 
-    @testset "max_args filtering" begin
+    @testset "max_value filtering" begin
         code = "function many(a,b,c,d,e,f) end\nfunction few(a) end\n"
-        allf = argument_count_report(code)
+        allf = CC.measure_report(ARGC, code)
         @test length(allf) == 2
-        viol = argument_count_report(code; max_args = 5)
+        viol = CC.measure_report(ARGC, code; max_value = 5)
         @test length(viol) == 1
         @test viol[1].name == "many"
-        @test viol[1].arg_count == 6
+        @test viol[1].value == 6
     end
 
     @testset "ignore list" begin
@@ -80,15 +86,15 @@
         function few(a) end
         macro six(a,b,c,d,e,f) end
         """
-        r = argument_count_report(code; ignore = [:many])
+        r = CC.measure_report(ARGC, code; ignore = [:many])
         @test length(r) == 2
         @test Set(f.name for f in r) == Set(["few", "@six"])
         @test !any(f -> f.name == "many", r)
 
-        viol = argument_count_report(code; max_args = 5, ignore = [:many, "@six"])
+        viol = CC.measure_report(ARGC, code; max_value = 5, ignore = [:many, "@six"])
         @test isempty(viol)
 
-        viol2 = argument_count_report(code; max_args = 5, ignore = ["@six"])
+        viol2 = CC.measure_report(ARGC, code; max_value = 5, ignore = ["@six"])
         @test length(viol2) == 1
         @test viol2[1].name == "many"
 
@@ -106,7 +112,7 @@ end
 """,
             )
             @test isempty(
-                check_argument_count(file; max_args = 5, ignore = [:bad]),
+                CC.check_measure(ARGC, file; max_value = 5, ignore = [:bad]),
             )
         end
 
@@ -134,31 +140,35 @@ end
             nothing
         end
         """
-        viol_c = argument_count_report(code_callable; max_args = 5)
+        viol_c = CC.measure_report(ARGC, code_callable; max_value = 5)
         @test length(viol_c) == 2
         @test Set(f.name for f in viol_c) == Set(["IgCtor", "ig_big"])
 
         @test isempty(
-            argument_count_report(
+            CC.measure_report(
+                ARGC,
                 code_callable;
-                max_args = 5,
+                max_value = 5,
                 ignore = (ig_big, IgCtor),
             ),
         )
     end
 
-    @testset "FunctionArguments and FileArguments" begin
-        fa = FunctionArguments("g", 7, 3)
-        @test fa.name == "g" && fa.arg_count == 7 && fa.line == 3
-        fl = FileArguments(
+    @testset "FunctionMeasure / FileMeasure aliases for ArgumentCountComplexity" begin
+        fa = CC.FunctionMeasure{CC.ArgumentCountComplexity}("g", 7, 3)
+        @test fa.name == "g" && fa.value == 7 && fa.line == 3
+        fl = CC.FileMeasure{CC.ArgumentCountComplexity}(
             "x.jl",
-            [FunctionArguments("g", 2, 1), FunctionArguments("h", 3, 2)],
+            [
+                CC.FunctionMeasure{CC.ArgumentCountComplexity}("g", 2, 1),
+                CC.FunctionMeasure{CC.ArgumentCountComplexity}("h", 3, 2),
+            ],
         )
         @test fl.path == "x.jl"
-        @test fl.total_arguments == 5
+        @test fl.total_value == 5
     end
 
-    @testset "file_argument_counts and check_argument_count" begin
+    @testset "file_measure and check_measure" begin
         mktempdir() do tmpdir
             file = joinpath(tmpdir, "sig.jl")
             write(
@@ -172,29 +182,34 @@ function bad(a, b, c, d, e, f)
 end
 """,
             )
-            fa = file_argument_counts(file)
+            fa = CC.file_measure(ARGC, file)
             @test length(fa.functions) == 2
-            @test fa.total_arguments == 9
+            @test fa.total_value == 9
 
-            fa_v = file_argument_counts(file; max_args = 5)
+            fa_v = CC.file_measure(ARGC, file; max_value = 5)
             @test length(fa_v.functions) == 1
             @test fa_v.functions[1].name == "bad"
 
-            @test_throws ErrorException check_argument_count(file; max_args = 5)
-            v = check_argument_count(file; max_args = 5, throw_on_violation = false)
+            @test_throws ErrorException CC.check_measure(ARGC, file; max_value = 5)
+            v = CC.check_measure(
+                ARGC,
+                file;
+                max_value = 5,
+                throw_on_violation = false,
+            )
             @test length(v) == 1
             @test v[1].functions[1].name == "bad"
 
-            @test isempty(check_argument_count(file; max_args = 6))
+            @test isempty(CC.check_measure(ARGC, file; max_value = 6))
         end
     end
 
-    @testset "check_argument_count error message" begin
+    @testset "check_measure error message" begin
         mktempdir() do tmpdir
             file = joinpath(tmpdir, "t.jl")
             write(file, "function z(a,b,c,d,e,f) end\n")
             err = try
-                check_argument_count(file; max_args = 5)
+                CC.check_measure(ARGC, file; max_value = 5)
                 nothing
             catch e
                 e
@@ -207,16 +222,12 @@ end
         end
     end
 
-    @testset "check_argument_count path not found" begin
-        @test_throws ArgumentError check_argument_count("nonexistent_path_xyz")
+    @testset "check_measure path not found" begin
+        @test_throws ArgumentError CC.check_measure(ARGC, "nonexistent_path_xyz")
     end
 
-    @testset "check_argument_count on module" begin
-        v = check_argument_count(
-            CodeComplexity;
-            max_args = 30,
-            throw_on_violation = false,
-        )
-        @test v isa Vector{FileArguments}
+    @testset "check_measure on module" begin
+        v = CC.check_measure(ARGC, CC; max_value = 30, throw_on_violation = false)
+        @test v isa Vector{<:CC.FileMeasure}
     end
 end
