@@ -173,3 +173,12 @@ For built-in metrics, `max_value` defaults to a conventional threshold
 defined metrics should pass `max_value` explicitly.
 """
 function check_measure end
+
+# `metric_label` and `default_max_value` are internal-ish traits used
+# (respectively) for default error-message formatting and for the
+# `check_measure` default threshold; the per-metric methods live in
+# `common.jl`. The bare function declarations exist here so the
+# `Internals` submodule can `using ..CodeComplexity: metric_label, ...`
+# before any methods are added.
+function metric_label end
+function default_max_value end
