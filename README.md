@@ -2,7 +2,16 @@
 
 [![CI](https://github.com/charleskawczynski/CodeComplexity.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/charleskawczynski/CodeComplexity.jl/actions/workflows/ci.yml)
 
-Measure **cyclomatic complexity** and **cognitive complexity** of Julia code, plus detect **too-many-arguments** signatures. Use it to find overly complex functions, enforce limits in tests or CI, and scan files, directories, or whole packages.
+Measure code-quality metrics on Julia source through a single dispatched
+API. Built-in metrics include:
+
+- **Cyclomatic complexity** (McCabe)
+- **Cognitive complexity** (Campbell / SonarSource)
+- **Argument count** (Ruff `PLR0913`-style)
+
+Use CodeComplexity.jl to find overly complex or oversized definitions,
+enforce limits in tests or CI, and scan files, directories, or whole
+packages.
 
 ## Installation
 
@@ -11,13 +20,46 @@ using Pkg
 Pkg.add("CodeComplexity")
 ```
 
+## One API, every metric
+
+Every entry point dispatches on a metric singleton. The metric types,
+result types, and the verbs are all exported, so the simplest entry
+is `using CodeComplexity`:
+
+```julia
+using CodeComplexity
+```
+
+All public verbs share a `measure_*` prefix. The threshold-checking
+verb's canonical name is `check_measure` (its semantics differ from the
+rest of the family — it asserts and throws rather than returning data),
+but it's also available as `measure_check`, an exact `const` alias, so
+that `measure_<TAB>` at the REPL reveals the entire family at once.
+
+| Singleton | What it measures | Default threshold |
+|-----------|------------------|-------------------|
+| `CyclomaticComplexity()` | McCabe decision points + 1 | 10 |
+| `CognitiveComplexity()` | Sonar / Campbell cognitive complexity | 15 |
+| `ArgumentCountComplexity()` | Parameter count of a definition (Ruff PLR0913) | 5 |
+
+All metrics plug into the same six verbs:
+
+```julia
+measure_code(metric, expr_or_code)               # one expression
+measure_report(metric, code; max_value=...)      # per-definition vector
+measure_file(metric, path; max_value=...)        # one file
+measure_directory(metric, dir; recursive=true, max_value=...)
+measure_package(metric, pkg_or_name; max_value=...)
+measure_check(metric, path_or_pkg; max_value=..., throw_on_violation=true) # exact alias of `check_measure`
+check_measure(metric, path_or_pkg; max_value=..., throw_on_violation=true)
+```
+
 ## Quick start
 
 ```julia
 using CodeComplexity
 
-# Single expression or code string
-cyclomatic_complexity("""
+code = """
 function foo(x)
     if x > 0
         return x
@@ -25,36 +67,70 @@ function foo(x)
         return -x
     end
 end
-""")  # 2
+"""
 
-# Per-function report from a string
-complexity_report(read("src/MyModule.jl", String))
+measure_code(CyclomaticComplexity(), code)  # 2
+measure_code(CognitiveComplexity(),  code)  # 2
 
-# Analyze a file
-fc = file_complexity("src/MyModule.jl")
-println("Total: ", fc.total_complexity)
-for f in fc.functions
-    println("  ", f.name, ": ", f.complexity, " (line ", f.line, ")")
+# `measure_code(ArgumentCountComplexity(), …)` operates on a single
+# function-like expression, so use `measure_report` to score the
+# definitions inside a code string:
+measure_report(ArgumentCountComplexity(), code)[1].value  # 1
+
+# Per-definition reports
+measure_report(CyclomaticComplexity(), read("src/MyModule.jl", String))
+measure_report(CognitiveComplexity(),  read("src/MyModule.jl", String);
+               max_value = 15)
+
+# Whole-package scans
+measure_package(CyclomaticComplexity(), CodeComplexity)
+measure_package(CognitiveComplexity(),  "MyPackage")
+
+# Threshold checks (built-in default thresholds — see table above)
+check_measure(CyclomaticComplexity(),    MyPackage)                 # 10
+check_measure(CognitiveComplexity(),     MyPackage)                 # 15
+check_measure(ArgumentCountComplexity(), MyPackage)                 # 5
+check_measure(ArgumentCountComplexity(), MyPackage;
+              max_value = 7, ignore = (:legacy_api, "@my_macro"))
+```
+
+`check_measure` returns the violating files and throws when any exist
+unless `throw_on_violation=false`.
+
+## Result types
+
+Both result types are parametric on the metric:
+
+```julia
+struct FunctionMeasure{M <: AbstractMetric}
+    name::String
+    value::Int
+    line::Int
 end
 
-# Analyze a directory (recursive)
-directory_complexity("src/")
-
-# Analyze a package (by name or module)
-package_complexity("CodeComplexity")
-using MyPackage; package_complexity(MyPackage)
-
-# Enforce a limit (e.g. in tests or CI)
-check_complexity(MyPackage; max_complexity=10)  # throws if any function exceeds 10
-violations = check_complexity("src/"; max_complexity=10, throw_on_violation=false)
+struct FileMeasure{M <: AbstractMetric}
+    path::String
+    functions::Vector{FunctionMeasure{M}}
+    total_value::Int
+end
 ```
+
+So `measure_file(CognitiveComplexity(), …)` returns
+`FileMeasure{CognitiveComplexity}`, etc. The metric is recoverable from
+the type alone, and you can dispatch on it.
 
 ## Cognitive complexity (Campbell / SonarSource)
 
-Cognitive complexity ([G. Ann Campbell, 2023](https://www.sonarsource.com/resources/cognitive-complexity/)) measures how hard a piece of code is to *understand*, as opposed to how many independent paths it has. It increments for breaks in linear flow, charges extra for nested flow-break structures, ignores `try` itself but counts `catch`, collapses runs of like `&&`/`||` into one increment, and adds one for direct recursion.
+Cognitive complexity ([G. Ann Campbell, 2023](https://www.sonarsource.com/resources/cognitive-complexity/);
+[white paper PDF](https://www.sonarsource.com/docs/CognitiveComplexity.pdf))
+measures how hard a piece of code is to *understand*, as opposed to how
+many independent paths it has. It increments for breaks in linear flow,
+charges extra for nested flow-break structures, ignores `try` itself but
+counts `catch`, collapses runs of like `&&`/`||` into one increment, and
+adds one for direct recursion.
 
 ```julia
-cognitive_complexity("""
+measure_code(CognitiveComplexity(), """
 function sumOfPrimes(maxv)
     total = 0
     for i in 1:maxv          # +1
@@ -69,16 +145,7 @@ function sumOfPrimes(maxv)
     return total
 end
 """)  # 7
-
-cognitive_complexity_report(read("src/MyModule.jl", String))
-file_cognitive_complexity("src/MyModule.jl"; max_complexity=15)
-directory_cognitive_complexity("src/"; max_complexity=15)
-package_cognitive_complexity(CodeComplexity; max_complexity=15)
-
-check_cognitive_complexity(MyPackage; max_complexity=15)  # SonarSource's recommended limit
 ```
-
-Types: **`FunctionCognitiveComplexity`** (`name`, `complexity`, `line`) and **`FileCognitiveComplexity`** (`path`, `functions`, `total_complexity`).
 
 A few Julia-specific notes:
 
@@ -86,47 +153,11 @@ A few Julia-specific notes:
 - Direct recursion is detected by name; **indirect recursion** and calls through dotted names (e.g. `M.foo`) are not counted.
 - Comprehensions/generators are walked as plain expressions; nested `if`/`for` *inside* a comprehension do not add structural increments.
 
-## Too many arguments (Ruff PLR0913–style)
+## Cyclomatic complexity (McCabe)
 
-You can flag definitions whose **signatures** have more than a chosen number of parameters (positional slots plus keyword slots), in the spirit of Ruff’s [PLR0913](https://docs.astral.sh/ruff/rules/too-many-arguments/) / Pylint’s `max-args` (Ruff’s default is **5**).
-
-```julia
-argument_count_report(read("src/MyModule.jl", String))
-argument_count_report(code; max_args=5)   # only definitions with arg_count > 5
-
-file_argument_counts("src/MyModule.jl"; max_args=5)
-directory_argument_counts("src/"; max_args=5)
-package_argument_counts(CodeComplexity; max_args=5)
-
-check_argument_count("src/"; max_args=5)  # throws if any definition exceeds the limit
-```
-
-Types: **`FunctionArguments`** (`name`, `arg_count`, `line`) and **`FileArguments`** (`path`, `functions`, `total_arguments`).
-
-### Ignoring definitions (`ignore`)
-
-All argument-count entry points accept optional **`ignore`**: an iterable of names or values that resolve to a name (see below). Ignored definitions are dropped **before** the `max_args` filter.
-
-```julia
-# Symbols / strings (macros use the "@name" form, e.g. "@generated")
-check_argument_count(MyPackage; max_args=5, ignore=(:legacy_api, "@my_macro"))
-
-# Functions, types / constructors, builtins — matched via nameof → same unqualified name as in source
-check_argument_count(MyPackage; max_args=5, ignore=(wide_options, MyStruct))
-```
-
-**Caveats**
-
-- Matching is by **unqualified name** only: every definition with that name is skipped, even across modules.
-- **Macros** usually have no convenient callable to pass; use `Symbol` or `String` with the stored form **`"@macroname"`**.
-- **Complex type objects** (e.g. `Union{Int,Nothing}`) use `nameof`; that string may not match a simple identifier in source—prefer symbols or strings when unsure.
-- **`->` lambdas** are reported as **`"<anonymous>"`** if you need to ignore them.
-
-## What is cyclomatic complexity?
-
-Cyclomatic complexity counts **decision points** in the control flow (plus one). Higher values mean more branches and usually harder-to-test or harder-to-follow code.
-
-The metric counts:
+Cyclomatic complexity counts **decision points** in the control flow (plus
+one). Higher values mean more branches and usually harder-to-test or
+harder-to-follow code. The metric counts:
 
 - `if` / `elseif`
 - `for` / `while`
@@ -135,72 +166,83 @@ The metric counts:
 - Ternary `? :`
 - `@goto`
 
-Minimum complexity is 1 (no branches). A single `if` gives 2; each extra branch adds one.
+Minimum complexity is 1 (no branches). A single `if` gives 2; each extra
+branch adds one.
 
-## Main API
+## Argument count (Ruff PLR0913)
 
-| Function | Description |
-|----------|-------------|
-| `cyclomatic_complexity(expr)` / `cyclomatic_complexity(code::String)` | Complexity of one expression or code string |
-| `complexity_report(code; max_complexity=nothing)` | Per-function complexity for code string; optional threshold filter |
-| `file_complexity(path; max_complexity=nothing)` | Per-function complexity for a file |
-| `directory_complexity(dir; recursive=true, max_complexity=nothing)` | All `.jl` files in a directory |
-| `package_complexity(pkg_or_name; max_complexity=nothing)` | All source files of a package (module or name) |
-| `check_complexity(path_or_pkg; max_complexity=10, throw_on_violation=true)` | Assert no function exceeds the limit; useful in tests/CI |
-| `cognitive_complexity(expr)` / `cognitive_complexity(code::String)` | Cognitive complexity (Campbell / SonarSource) of one expression or code string |
-| `cognitive_complexity_report(code; max_complexity=nothing)` | Per-function cognitive complexity for code string; optional threshold filter |
-| `file_cognitive_complexity(path; max_complexity=nothing)` | Per-function cognitive complexity for a file |
-| `directory_cognitive_complexity(dir; recursive=true, max_complexity=nothing)` | All `.jl` files in a directory |
-| `package_cognitive_complexity(pkg_or_name; max_complexity=nothing)` | All source files of a package |
-| `check_cognitive_complexity(path_or_pkg; max_complexity=15, throw_on_violation=true)` | Assert no function exceeds the cognitive limit (default 15, SonarSource's recommendation) |
-| `argument_count_report(code; max_args=nothing, ignore=nothing)` | Parameter count per definition; optional `max_args` filter (`arg_count > max_args`); optional `ignore` |
-| `file_argument_counts(path; max_args=nothing, ignore=nothing)` | Same as above for one file |
-| `directory_argument_counts(dir; recursive=true, max_args=nothing, ignore=nothing)` | All `.jl` files in a directory |
-| `package_argument_counts(pkg_or_name; max_args=nothing, ignore=nothing)` | All package sources |
-| `check_argument_count(path_or_pkg; max_args=5, throw_on_violation=true, ignore=nothing)` | Assert no definition exceeds the parameter limit (default 5, like Ruff) |
+Flag definitions whose **signatures** have more than a chosen number of
+parameters (positional slots plus keyword slots), in the spirit of Ruff's
+[`PLR0913`](https://docs.astral.sh/ruff/rules/too-many-arguments/) /
+Pylint's `lint.pylint.max-args` (default 5).
 
-Types:
+```julia
+measure_report(ArgumentCountComplexity(), code; max_value = 5)
+check_measure(ArgumentCountComplexity(), "src/"; max_value = 5)
+```
 
-- **`FunctionComplexity`**: `name`, `complexity`, `line`
-- **`FileComplexity`**: `path`, `functions`, `total_complexity`
-- **`FunctionCognitiveComplexity`**: `name`, `complexity`, `line`
-- **`FileCognitiveComplexity`**: `path`, `functions`, `total_complexity`
-- **`FunctionArguments`**: `name`, `arg_count`, `line`
-- **`FileArguments`**: `path`, `functions`, `total_arguments`
+### Ignoring definitions (`ignore`)
+
+Every argument-count entry point accepts an optional `ignore` iterable.
+Each entry can be a `Symbol`, an `AbstractString` (use `"@macro"` for
+macros), or a callable / type / builtin (matched by `nameof`). Ignored
+definitions are dropped **before** the `max_value` filter.
+
+```julia
+check_measure(ArgumentCountComplexity(), MyPackage;
+              max_value = 5, ignore = (:legacy_api, "@my_macro"))
+check_measure(ArgumentCountComplexity(), MyPackage;
+              max_value = 5, ignore = (wide_options, MyStruct))
+```
+
+**Caveats**
+
+- Matching is by **unqualified name** only: every definition with that name is skipped, even across modules.
+- **Macros** usually have no convenient callable to pass; use `Symbol` or `String` with the stored form **`"@macroname"`**.
+- **Complex type objects** (e.g. `Union{Int,Nothing}`) use `nameof`; that string may not match a simple identifier in source — prefer symbols or strings when unsure.
+- **`->` lambdas** are reported as **`"<anonymous>"`** if you need to ignore them.
 
 ## Use in tests and CI
 
-To fail tests when any function exceeds a complexity threshold:
-
 ```julia
-using Test, CodeComplexity, MyPackage
+using Test
+using CodeComplexity
+import MyPackage
 
 @testset "Complexity" begin
-    check_complexity(MyPackage; max_complexity=10)
+    check_measure(CyclomaticComplexity(),    MyPackage; max_value = 10)
+    check_measure(CognitiveComplexity(),     MyPackage; max_value = 15)
+    check_measure(ArgumentCountComplexity(), MyPackage; max_value = 5)
 end
 ```
 
 Or scan a directory in a script:
 
 ```julia
-check_complexity("src/"; max_complexity=15)
+check_measure(CyclomaticComplexity(), "src/"; max_value = 15)
 ```
+
+## Migrating from older versions
+
+Two earlier API surfaces (the v1 pre-singleton names and the v2
+`*_complexity` verbs) are kept as deprecation shims that forward into
+the current API and emit `Base.depwarn` notices. See
+[MIGRATIONS.md](MIGRATIONS.md) for the migration map and field-name
+compatibility notes.
 
 ## Code style (JuliaFormatter)
 
-Formatting is enforced by [JuliaFormatter.jl](https://github.com/domluna/JuliaFormatter.jl) via the [JuliaFormatter](.github/workflows/JuliaFormatter.yml) workflow. Local rules live in [`.JuliaFormatter.toml`](.JuliaFormatter.toml) (style, indent, margin, ignore). To format the repo:
+Formatting is enforced by [JuliaFormatter.jl](https://github.com/domluna/JuliaFormatter.jl) via the [JuliaFormatter](.github/workflows/JuliaFormatter.yml) workflow. Local rules live in [`.JuliaFormatter.toml`](.JuliaFormatter.toml). To format the repo:
 
 ```bash
 julia -e 'using JuliaFormatter; JuliaFormatter.format(".")'
 ```
 
-Or from a Julia REPL: `using JuliaFormatter; JuliaFormatter.format(".")`.
-
 ## Aqua.jl
 
-This package uses **[Aqua.jl](https://github.com/JuliaTesting/Aqua.jl)** in its test suite (`Aqua.test_all(CodeComplexity)`) for general package-quality checks.
-
-**Relevance for Aqua:** The `check_complexity` feature could fit as an optional Aqua test (e.g. `test_cyclomatic_complexity`): a single, automatable check that fails when any function exceeds a complexity threshold, consistent with Aqua's other checks (ambiguities, undefined exports, stale deps, etc.). That would let users opt in via something like `Aqua.test_all(MyPackage; cyclomatic_complexity=(max=10,))` without adding a separate test. Until or unless that is added to Aqua, you can run both in the same test suite—Aqua for project hygiene and CodeComplexity for complexity limits.
+This package uses **[Aqua.jl](https://github.com/JuliaTesting/Aqua.jl)** in
+its test suite (`Aqua.test_all(CodeComplexity)`) for general
+package-quality checks.
 
 ## License
 

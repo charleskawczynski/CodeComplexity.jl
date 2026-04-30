@@ -1,13 +1,18 @@
-# Included from runtests.jl — cyclomatic complexity metric, reports, and check_complexity.
+# Included from runtests.jl — cyclomatic-complexity correctness tests
+# exercised through the v3 API: `CC.measure_code(CC.CyclomaticComplexity(), …)`,
+# `CC.measure_report(CC.CyclomaticComplexity(), …)`, etc.
 
-@testset "Basic complexity" begin
+const CYCLO = CC.CyclomaticComplexity()
+cyclo_measure(x) = CC.measure_code(CYCLO, x)
+
+@testset "Cyclomatic: trivial cases" begin
     @testset "trivial function" begin
         code = """
         function trivial()
             return nothing
         end
         """
-        @test cyclomatic_complexity(code) == 1
+        @test cyclo_measure(code) == 1
     end
 
     @testset "expression as statement" begin
@@ -16,7 +21,7 @@
             0xF00D
         end
         """
-        @test cyclomatic_complexity(code) == 1
+        @test cyclo_measure(code) == 1
     end
 
     @testset "sequential statements" begin
@@ -27,16 +32,16 @@
             return s
         end
         """
-        @test cyclomatic_complexity(code) == 1
+        @test cyclo_measure(code) == 1
     end
 
     @testset "short form function" begin
         code = "f(x) = x + 1"
-        @test cyclomatic_complexity(code) == 1
+        @test cyclo_measure(code) == 1
     end
 end
 
-@testset "If statements" begin
+@testset "Cyclomatic: if statements" begin
     @testset "simple if" begin
         code = """
         function simple_if(x)
@@ -46,7 +51,7 @@ end
             return 0
         end
         """
-        @test cyclomatic_complexity(code) == 2
+        @test cyclo_measure(code) == 2
     end
 
     @testset "if-else" begin
@@ -59,7 +64,7 @@ end
             end
         end
         """
-        @test cyclomatic_complexity(code) == 2
+        @test cyclo_measure(code) == 2
     end
 
     @testset "if-elseif-else" begin
@@ -74,7 +79,7 @@ end
             end
         end
         """
-        @test cyclomatic_complexity(code) == 3
+        @test cyclo_measure(code) == 3
     end
 
     @testset "nested ifs" begin
@@ -91,7 +96,7 @@ end
             end
         end
         """
-        @test cyclomatic_complexity(code) == 3
+        @test cyclo_measure(code) == 3
     end
 
     @testset "multiple elseif" begin
@@ -110,11 +115,11 @@ end
             end
         end
         """
-        @test cyclomatic_complexity(code) == 5
+        @test cyclo_measure(code) == 5
     end
 end
 
-@testset "Loops" begin
+@testset "Cyclomatic: loops" begin
     @testset "for loop" begin
         code = """
         function for_loop()
@@ -123,7 +128,7 @@ end
             end
         end
         """
-        @test cyclomatic_complexity(code) == 2
+        @test cyclo_measure(code) == 2
     end
 
     @testset "nested for loops" begin
@@ -136,7 +141,7 @@ end
             end
         end
         """
-        @test cyclomatic_complexity(code) == 3
+        @test cyclo_measure(code) == 3
     end
 
     @testset "while loop" begin
@@ -148,7 +153,7 @@ end
             return n
         end
         """
-        @test cyclomatic_complexity(code) == 2
+        @test cyclo_measure(code) == 2
     end
 
     @testset "for with if" begin
@@ -161,18 +166,18 @@ end
             end
         end
         """
-        @test cyclomatic_complexity(code) == 3
+        @test cyclo_measure(code) == 3
     end
 end
 
-@testset "Short-circuit operators" begin
+@testset "Cyclomatic: short-circuit operators" begin
     @testset "single &&" begin
         code = """
         function and_operator(a, b)
             return a && b
         end
         """
-        @test cyclomatic_complexity(code) == 2
+        @test cyclo_measure(code) == 2
     end
 
     @testset "single ||" begin
@@ -181,7 +186,7 @@ end
             return a || b
         end
         """
-        @test cyclomatic_complexity(code) == 2
+        @test cyclo_measure(code) == 2
     end
 
     @testset "chained &&" begin
@@ -190,7 +195,7 @@ end
             return a && b && c
         end
         """
-        @test cyclomatic_complexity(code) == 3
+        @test cyclo_measure(code) == 3
     end
 
     @testset "mixed && and ||" begin
@@ -199,7 +204,7 @@ end
             return a && b || c
         end
         """
-        @test cyclomatic_complexity(code) == 3
+        @test cyclo_measure(code) == 3
     end
 
     @testset "&& as control flow" begin
@@ -209,7 +214,7 @@ end
             return 0
         end
         """
-        @test cyclomatic_complexity(code) == 2
+        @test cyclo_measure(code) == 2
     end
 
     @testset "|| as control flow" begin
@@ -219,18 +224,18 @@ end
             return 0
         end
         """
-        @test cyclomatic_complexity(code) == 2
+        @test cyclo_measure(code) == 2
     end
 end
 
-@testset "Ternary operator" begin
+@testset "Cyclomatic: ternary operator" begin
     @testset "simple ternary" begin
         code = """
         function simple_ternary(x)
             return x > 0 ? x : -x
         end
         """
-        @test cyclomatic_complexity(code) == 2
+        @test cyclo_measure(code) == 2
     end
 
     @testset "nested ternary" begin
@@ -239,11 +244,11 @@ end
             return x > 0 ? (x > 10 ? "big" : "small") : "negative"
         end
         """
-        @test cyclomatic_complexity(code) == 3
+        @test cyclo_measure(code) == 3
     end
 end
 
-@testset "Try-catch" begin
+@testset "Cyclomatic: try-catch" begin
     @testset "simple try-catch" begin
         code = """
         function simple_try()
@@ -254,7 +259,7 @@ end
             end
         end
         """
-        @test cyclomatic_complexity(code) == 2
+        @test cyclo_measure(code) == 2
     end
 
     @testset "try-catch-finally" begin
@@ -269,7 +274,7 @@ end
             end
         end
         """
-        @test cyclomatic_complexity(code) == 2
+        @test cyclo_measure(code) == 2
     end
 
     @testset "try-finally (no catch)" begin
@@ -282,7 +287,7 @@ end
             end
         end
         """
-        @test cyclomatic_complexity(code) == 1
+        @test cyclo_measure(code) == 1
     end
 
     @testset "nested try-catch" begin
@@ -299,7 +304,7 @@ end
             end
         end
         """
-        @test cyclomatic_complexity(code) == 3
+        @test cyclo_measure(code) == 3
     end
 
     @testset "try with if in catch" begin
@@ -314,11 +319,11 @@ end
             end
         end
         """
-        @test cyclomatic_complexity(code) == 3
+        @test cyclo_measure(code) == 3
     end
 end
 
-@testset "Nested functions" begin
+@testset "Cyclomatic: nested functions" begin
     @testset "inner function" begin
         code = """
         function outer()
@@ -328,8 +333,7 @@ end
             return inner()
         end
         """
-        # The inner function definition adds complexity
-        @test cyclomatic_complexity(code) == 1
+        @test cyclo_measure(code) == 1
     end
 
     @testset "inner function with if" begin
@@ -344,11 +348,11 @@ end
             return inner(x)
         end
         """
-        @test cyclomatic_complexity(code) == 2
+        @test cyclo_measure(code) == 2
     end
 end
 
-@testset "Complex examples" begin
+@testset "Cyclomatic: complex examples" begin
     @testset "recursive function" begin
         code = """
         function factorial(n)
@@ -359,7 +363,7 @@ end
             end
         end
         """
-        @test cyclomatic_complexity(code) == 2
+        @test cyclo_measure(code) == 2
     end
 
     @testset "binary search" begin
@@ -380,7 +384,7 @@ end
             return -1
         end
         """
-        @test cyclomatic_complexity(code) == 4
+        @test cyclo_measure(code) == 4
     end
 
     @testset "fizzbuzz" begin
@@ -399,7 +403,7 @@ end
             end
         end
         """
-        @test cyclomatic_complexity(code) == 5
+        @test cyclo_measure(code) == 5
     end
 
     @testset "quicksort partition" begin
@@ -417,11 +421,11 @@ end
             return i + 1
         end
         """
-        @test cyclomatic_complexity(code) == 3
+        @test cyclo_measure(code) == 3
     end
 end
 
-@testset "complexity_report" begin
+@testset "Cyclomatic: measure_report" begin
     @testset "single function" begin
         code = """
         function foo(x)
@@ -431,10 +435,10 @@ end
             return 0
         end
         """
-        report = complexity_report(code)
+        report = CC.measure_report(CYCLO, code)
         @test length(report) == 1
         @test report[1].name == "foo"
-        @test report[1].complexity == 2
+        @test report[1].value == 2
     end
 
     @testset "multiple functions" begin
@@ -461,16 +465,16 @@ end
             return total
         end
         """
-        report = complexity_report(code)
+        report = CC.measure_report(CYCLO, code)
         @test length(report) == 3
 
         foo_report = filter(r -> r.name == "foo", report)[1]
         bar_report = filter(r -> r.name == "bar", report)[1]
         baz_report = filter(r -> r.name == "baz", report)[1]
 
-        @test foo_report.complexity == 1
-        @test bar_report.complexity == 2
-        @test baz_report.complexity == 3
+        @test foo_report.value == 1
+        @test bar_report.value == 2
+        @test baz_report.value == 3
     end
 
     @testset "short form functions" begin
@@ -483,16 +487,16 @@ end
 
         abs_val(x) = x >= 0 ? x : -x
         """
-        report = complexity_report(code)
+        report = CC.measure_report(CYCLO, code)
         @test length(report) == 3
 
         square_report = filter(r -> r.name == "square", report)[1]
         cube_report = filter(r -> r.name == "cube", report)[1]
         abs_report = filter(r -> r.name == "abs_val", report)[1]
 
-        @test square_report.complexity == 1
-        @test cube_report.complexity == 1
-        @test abs_report.complexity == 2
+        @test square_report.value == 1
+        @test cube_report.value == 1
+        @test abs_report.value == 2
     end
 
     @testset "parametric functions" begin
@@ -511,21 +515,19 @@ end
             return zero(T)
         end
         """
-        report = complexity_report(code)
+        report = CC.measure_report(CYCLO, code)
         @test length(report) == 2
 
         typed_report = filter(r -> r.name == "typed_func", report)[1]
         generic_report = filter(r -> r.name == "generic_func", report)[1]
 
-        @test typed_report.complexity == 2
-        @test generic_report.complexity == 2
+        @test typed_report.value == 2
+        @test generic_report.value == 2
     end
 end
 
-@testset "File and directory analysis" begin
-    # Create a temporary directory with test files
+@testset "Cyclomatic: file and directory analysis" begin
     mktempdir() do tmpdir
-        # Create test file 1
         file1 = joinpath(tmpdir, "file1.jl")
         write(
             file1,
@@ -543,7 +545,6 @@ end
 """,
         )
 
-        # Create test file 2 in subdirectory
         subdir = joinpath(tmpdir, "subdir")
         mkdir(subdir)
         file2 = joinpath(subdir, "file2.jl")
@@ -564,44 +565,44 @@ end
 """,
         )
 
-        @testset "file_complexity" begin
-            fc = file_complexity(file1)
+        @testset "measure_file" begin
+            fc = CC.measure_file(CYCLO, file1)
             @test fc.path == file1
             @test length(fc.functions) == 2
-            @test fc.total_complexity == 3  # 1 + 2
+            @test fc.total_value == 3  # 1 + 2
         end
 
-        @testset "directory_complexity recursive" begin
-            results = directory_complexity(tmpdir; recursive = true)
+        @testset "measure_directory recursive" begin
+            results = CC.measure_directory(CYCLO, tmpdir; recursive = true)
             @test length(results) == 2
 
             total_funcs = sum(length(fc.functions) for fc in results)
             @test total_funcs == 3
         end
 
-        @testset "directory_complexity non-recursive" begin
-            results = directory_complexity(tmpdir; recursive = false)
+        @testset "measure_directory non-recursive" begin
+            results = CC.measure_directory(CYCLO, tmpdir; recursive = false)
             @test length(results) == 1
             @test results[1].path == file1
         end
 
         @testset "file not found" begin
-            @test_throws ArgumentError file_complexity("nonexistent.jl")
+            @test_throws ArgumentError CC.measure_file(CYCLO, "nonexistent.jl")
         end
 
         @testset "directory not found" begin
-            @test_throws ArgumentError directory_complexity("nonexistent_dir")
+            @test_throws ArgumentError CC.measure_directory(CYCLO, "nonexistent_dir")
         end
     end
 end
 
-@testset "Edge cases" begin
+@testset "Cyclomatic: edge cases" begin
     @testset "empty function" begin
         code = """
         function empty_func()
         end
         """
-        @test cyclomatic_complexity(code) == 1
+        @test cyclo_measure(code) == 1
     end
 
     @testset "function with only comments" begin
@@ -611,17 +612,17 @@ end
             # Another comment
         end
         """
-        @test cyclomatic_complexity(code) == 1
+        @test cyclo_measure(code) == 1
     end
 
     @testset "anonymous function" begin
         code = "x -> x + 1"
-        @test cyclomatic_complexity(code) == 1
+        @test cyclo_measure(code) == 1
     end
 
     @testset "anonymous function with if" begin
         code = "x -> x > 0 ? x : -x"
-        @test cyclomatic_complexity(code) == 2
+        @test cyclo_measure(code) == 2
     end
 
     @testset "do block" begin
@@ -635,7 +636,7 @@ end
             end
         end
         """
-        @test cyclomatic_complexity(code) == 2
+        @test cyclo_measure(code) == 2
     end
 
     @testset "generator expression" begin
@@ -644,8 +645,7 @@ end
             return sum(x for x in 1:10 if x % 2 == 0)
         end
         """
-        # Generator with filter adds complexity
-        @test cyclomatic_complexity(code) >= 1
+        @test cyclo_measure(code) >= 1
     end
 
     @testset "comprehension with condition" begin
@@ -654,22 +654,21 @@ end
             return [x^2 for x in 1:10 if x % 2 == 0]
         end
         """
-        # Comprehension with filter
-        @test cyclomatic_complexity(code) >= 1
+        @test cyclo_measure(code) >= 1
     end
 end
 
-@testset "Macro definitions" begin
+@testset "Cyclomatic: macro definitions" begin
     @testset "simple macro" begin
         code = """
         macro simple_macro(x)
             return x
         end
         """
-        report = complexity_report(code)
+        report = CC.measure_report(CYCLO, code)
         @test length(report) == 1
         @test report[1].name == "@simple_macro"
-        @test report[1].complexity == 1
+        @test report[1].value == 1
     end
 
     @testset "macro with if" begin
@@ -682,40 +681,37 @@ end
             end
         end
         """
-        report = complexity_report(code)
+        report = CC.measure_report(CYCLO, code)
         @test length(report) == 1
         @test report[1].name == "@conditional_macro"
-        @test report[1].complexity == 2
+        @test report[1].value == 2
     end
 end
 
-@testset "FunctionComplexity struct" begin
-    fc = FunctionComplexity("test_func", 5, 10)
+@testset "Cyclomatic: FunctionMeasure / FileMeasure structs" begin
+    fc = CC.FunctionMeasure{CC.CyclomaticComplexity}("test_func", 5, 10)
     @test fc.name == "test_func"
-    @test fc.complexity == 5
+    @test fc.value == 5
     @test fc.line == 10
 
-    # Test show method
     io = IOBuffer()
     show(io, fc)
     output = String(take!(io))
     @test occursin("test_func", output)
     @test occursin("5", output)
-end
 
-@testset "FileComplexity struct" begin
     funcs = [
-        FunctionComplexity("foo", 2, 1),
-        FunctionComplexity("bar", 3, 10),
+        CC.FunctionMeasure{CC.CyclomaticComplexity}("foo", 2, 1),
+        CC.FunctionMeasure{CC.CyclomaticComplexity}("bar", 3, 10),
     ]
-    fc = FileComplexity("test.jl", funcs)
-    @test fc.path == "test.jl"
-    @test length(fc.functions) == 2
-    @test fc.total_complexity == 5
+    fl = CC.FileMeasure("test.jl", funcs)
+    @test fl.path == "test.jl"
+    @test length(fl.functions) == 2
+    @test fl.total_value == 5
 end
 
-@testset "max_complexity filtering" begin
-    @testset "complexity_report with max_complexity" begin
+@testset "Cyclomatic: max_value filtering" begin
+    @testset "measure_report with max_value" begin
         code = """
         function simple()
             return 1
@@ -744,27 +740,23 @@ end
             end
         end
         """
-        # Get all functions
-        all_report = complexity_report(code)
+        all_report = CC.measure_report(CYCLO, code)
         @test length(all_report) == 3
 
-        # Filter: only complexity > 1
-        filtered = complexity_report(code; max_complexity = 1)
+        filtered = CC.measure_report(CYCLO, code; max_value = 1)
         @test length(filtered) == 2
-        @test all(f -> f.complexity > 1, filtered)
+        @test all(f -> f.value > 1, filtered)
 
-        # Filter: only complexity > 2
-        filtered = complexity_report(code; max_complexity = 2)
+        filtered = CC.measure_report(CYCLO, code; max_value = 2)
         @test length(filtered) == 1
         @test filtered[1].name == "complex"
-        @test filtered[1].complexity == 4
+        @test filtered[1].value == 4
 
-        # Filter: only complexity > 10 (none match)
-        filtered = complexity_report(code; max_complexity = 10)
+        filtered = CC.measure_report(CYCLO, code; max_value = 10)
         @test isempty(filtered)
     end
 
-    @testset "file_complexity with max_complexity" begin
+    @testset "measure_file with max_value" begin
         mktempdir() do tmpdir
             file = joinpath(tmpdir, "test.jl")
             write(
@@ -785,22 +777,19 @@ end
     """,
             )
 
-            # All functions
-            fc = file_complexity(file)
+            fc = CC.measure_file(CYCLO, file)
             @test length(fc.functions) == 2
-            @test fc.total_complexity == 4  # 1 + 3
+            @test fc.total_value == 4
 
-            # Only high complexity
-            fc = file_complexity(file; max_complexity = 1)
+            fc = CC.measure_file(CYCLO, file; max_value = 1)
             @test length(fc.functions) == 1
             @test fc.functions[1].name == "high"
-            @test fc.total_complexity == 3
+            @test fc.total_value == 3
         end
     end
 
-    @testset "directory_complexity with max_complexity" begin
+    @testset "measure_directory with max_value" begin
         mktempdir() do tmpdir
-            # File with low complexity functions
             file1 = joinpath(tmpdir, "simple.jl")
             write(
                 file1,
@@ -814,7 +803,6 @@ end
    """,
             )
 
-            # File with mixed complexity
             file2 = joinpath(tmpdir, "mixed.jl")
             write(
                 file2,
@@ -835,26 +823,23 @@ end
    """,
             )
 
-            # All files
-            results = directory_complexity(tmpdir)
+            results = CC.measure_directory(CYCLO, tmpdir)
             @test length(results) == 2
 
-            # Only files with violations > 2
-            results = directory_complexity(tmpdir; max_complexity = 2)
+            results = CC.measure_directory(CYCLO, tmpdir; max_value = 2)
             @test length(results) == 1
             @test basename(results[1].path) == "mixed.jl"
             @test length(results[1].functions) == 1
             @test results[1].functions[1].name == "d"
 
-            # No violations for high threshold
-            results = directory_complexity(tmpdir; max_complexity = 10)
+            results = CC.measure_directory(CYCLO, tmpdir; max_value = 10)
             @test isempty(results)
         end
     end
 end
 
-@testset "check_complexity" begin
-    @testset "check_complexity on file - no violations" begin
+@testset "Cyclomatic: check_measure" begin
+    @testset "no violations" begin
         mktempdir() do tmpdir
             file = joinpath(tmpdir, "good.jl")
             write(
@@ -865,14 +850,12 @@ end
     end
     """,
             )
-
-            # Should not throw
-            violations = check_complexity(file; max_complexity = 5)
+            violations = CC.check_measure(CYCLO, file; max_value = 5)
             @test isempty(violations)
         end
     end
 
-    @testset "check_complexity on file - with violations" begin
+    @testset "with violations" begin
         mktempdir() do tmpdir
             file = joinpath(tmpdir, "bad.jl")
             write(
@@ -893,21 +876,22 @@ end
     """,
             )
 
-            # Should throw
-            @test_throws ErrorException check_complexity(file; max_complexity = 3)
+            @test_throws ErrorException CC.check_measure(CYCLO, file; max_value = 3)
 
-            # Should not throw with throw_on_violation=false
-            violations =
-                check_complexity(file; max_complexity = 3, throw_on_violation = false)
+            violations = CC.check_measure(
+                CYCLO,
+                file;
+                max_value = 3,
+                throw_on_violation = false,
+            )
             @test length(violations) == 1
             @test violations[1].functions[1].name == "complex"
-            @test violations[1].functions[1].complexity == 5
+            @test violations[1].functions[1].value == 5
         end
     end
 
-    @testset "check_complexity on directory" begin
+    @testset "directory" begin
         mktempdir() do tmpdir
-            # Good file
             write(
                 joinpath(tmpdir, "good.jl"),
                 """
@@ -917,7 +901,6 @@ end
 """,
             )
 
-            # Bad file
             write(
                 joinpath(tmpdir, "bad.jl"),
                 """
@@ -932,30 +915,30 @@ end
 """,
             )
 
-            # Should throw due to bad.jl
-            @test_throws ErrorException check_complexity(tmpdir; max_complexity = 2)
+            @test_throws ErrorException CC.check_measure(CYCLO, tmpdir; max_value = 2)
 
-            # Get violations without throwing
-            violations =
-                check_complexity(tmpdir; max_complexity = 2, throw_on_violation = false)
+            violations = CC.check_measure(
+                CYCLO,
+                tmpdir;
+                max_value = 2,
+                throw_on_violation = false,
+            )
             @test length(violations) == 1
             @test occursin("bad.jl", violations[1].path)
         end
     end
 
-    @testset "check_complexity on module" begin
-        # Test on CodeComplexity itself
-        # This should pass with a reasonable threshold
-        violations = check_complexity(
-            CodeComplexity;
-            max_complexity = 20,
+    @testset "module" begin
+        violations = CC.check_measure(
+            CYCLO,
+            CC;
+            max_value = 20,
             throw_on_violation = false,
         )
-        # Just verify it runs without error
-        @test violations isa Vector{FileComplexity}
+        @test violations isa Vector{<:CC.FileMeasure}
     end
 
-    @testset "check_complexity error message format" begin
+    @testset "error message format" begin
         mktempdir() do tmpdir
             file = joinpath(tmpdir, "test.jl")
             write(
@@ -973,7 +956,7 @@ end
             )
 
             err = try
-                check_complexity(file; max_complexity = 2)
+                CC.check_measure(CYCLO, file; max_value = 2)
                 nothing
             catch e
                 e
@@ -986,7 +969,7 @@ end
         end
     end
 
-    @testset "check_complexity with default max_complexity" begin
+    @testset "default max_value" begin
         mktempdir() do tmpdir
             file = joinpath(tmpdir, "simple.jl")
             write(
@@ -998,13 +981,12 @@ end
     """,
             )
 
-            # Default max_complexity is 10, simple function should pass
-            violations = check_complexity(file)
+            violations = CC.check_measure(CYCLO, file)
             @test isempty(violations)
         end
     end
 
-    @testset "check_complexity path not found" begin
-        @test_throws ArgumentError check_complexity("nonexistent_path")
+    @testset "path not found" begin
+        @test_throws ArgumentError CC.check_measure(CYCLO, "nonexistent_path")
     end
 end

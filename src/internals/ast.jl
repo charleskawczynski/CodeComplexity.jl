@@ -1,7 +1,8 @@
-# Shared AST helpers for scanning Julia source (used by cyclomatic and argument-count analysis).
+# Shared AST helpers used by every metric: parsing source strings and
+# extracting names / line numbers from function-like expressions.
 
 function _parse_code(code::AbstractString)
-    return JuliaSyntax.parseall(Expr, code; ignore_errors = true)
+    return parseall(Expr, code; ignore_errors = true)
 end
 
 function _get_function_name(expr)
