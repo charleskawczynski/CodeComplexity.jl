@@ -8,34 +8,53 @@
 # (`cyclomatic_complexity.jl`, `cognitive_complexity.jl`,
 # `argument_counts.jl`).
 #
-# Nothing here is exported. Users qualify everything via the package, e.g.
-# `import CodeComplexity as CC; CC.measure(CC.CyclomaticComplexity(), code)`.
+# All of the user-facing verbs share a `measure_*` prefix, which lets a
+# `using CodeComplexity` user discover them with `measure_<TAB>` at the
+# REPL. `check_measure` is the single non-prefix verb because its
+# semantics are different (assert / throw rather than return data).
+# Previously released names are re-exported from `src/deprecated.jl`.
+
+export
+    # Metric supertype + built-in singletons.
+    AbstractMetric,
+    CyclomaticComplexity,
+    CognitiveComplexity,
+    ArgumentCountComplexity,
+    # Parametric result types.
+    FunctionMeasure,
+    FileMeasure,
+    # Public verbs.
+    measure_code,
+    measure_report,
+    measure_file,
+    measure_directory,
+    measure_package,
+    check_measure,
+    measure_check
 
 # --- Metric supertype and built-in singletons ------------------------------
 
 """
     AbstractMetric
 
-Supertype for code-quality metrics. Each metric is a zero-field singleton
-used purely for dispatch. Built-in singletons are
-[`CyclomaticComplexity`](@ref), [`CognitiveComplexity`](@ref), and
-[`ArgumentCountComplexity`](@ref); user-defined metrics subtype
-`AbstractMetric` and implement [`measure`](@ref) (plus optionally
-[`metric_label`](@ref) / [`default_max_value`](@ref)).
+Supertype for the built-in code-quality metrics. Each metric is a
+zero-field singleton used purely for dispatch. The built-in singletons
+are [`CyclomaticComplexity`](@ref), [`CognitiveComplexity`](@ref), and
+[`ArgumentCountComplexity`](@ref).
 """
 abstract type AbstractMetric end
 
 """
     CyclomaticComplexity()
 
-McCabe-style decision-point count plus one. See [`measure`](@ref).
+McCabe-style decision-point count plus one. See [`measure_code`](@ref).
 """
 struct CyclomaticComplexity <: AbstractMetric end
 
 """
     CognitiveComplexity()
 
-Campbell / SonarSource cognitive complexity. See [`measure`](@ref).
+Campbell / SonarSource cognitive complexity. See [`measure_code`](@ref).
 """
 struct CognitiveComplexity <: AbstractMetric end
 
@@ -43,7 +62,7 @@ struct CognitiveComplexity <: AbstractMetric end
     ArgumentCountComplexity()
 
 Parameter count of a function-like definition (Ruff PLR0913-style). See
-[`measure`](@ref).
+[`measure_code`](@ref).
 """
 struct ArgumentCountComplexity <: AbstractMetric end
 
@@ -102,19 +121,19 @@ end
 # --- Public verbs (stubs only — implementations live elsewhere) -----------
 
 """
-    measure(metric::AbstractMetric, expr) -> Int
-    measure(metric::AbstractMetric, code::AbstractString) -> Int
+    measure_code(metric::AbstractMetric, expr) -> Int
+    measure_code(metric::AbstractMetric, code::AbstractString) -> Int
 
 Compute `metric`'s score for a single Julia expression (an `Expr` from
 `Meta.parse` / `JuliaSyntax`) or a code string. Each metric defines what
 "scoring an expression" means; see the per-metric docstrings.
 
 Each metric file provides its own
-`measure(::M, ::AbstractString)` one-liner so that the
+`measure_code(::M, ::AbstractString)` one-liner so that the
 `(::AbstractMetric, ::AbstractString)` and `(::ConcreteMetric, ::Any)`
 signatures do not collide.
 """
-function measure end
+function measure_code end
 
 """
     measure_report(metric, code; max_value=nothing, kwargs...)
@@ -131,32 +150,32 @@ pre-filter hook.
 function measure_report end
 
 """
-    file_measure(metric, filepath; max_value=nothing, kwargs...)
+    measure_file(metric, filepath; max_value=nothing, kwargs...)
         -> FileMeasure{typeof(metric)}
 
 Run [`measure_report`](@ref) on the contents of `filepath` and wrap the
 results in a [`FileMeasure`](@ref).
 """
-function file_measure end
+function measure_file end
 
 """
-    directory_measure(metric, dirpath;
+    measure_directory(metric, dirpath;
                       recursive=true, max_value=nothing, kwargs...)
         -> Vector{FileMeasure{typeof(metric)}}
 
-Run [`file_measure`](@ref) on every `.jl` file in `dirpath`. When
+Run [`measure_file`](@ref) on every `.jl` file in `dirpath`. When
 `max_value` is set, files with no surviving definitions are excluded.
 """
-function directory_measure end
+function measure_directory end
 
 """
-    package_measure(metric, pkg; max_value=nothing, kwargs...)
+    measure_package(metric, pkg; max_value=nothing, kwargs...)
         -> Vector{FileMeasure{typeof(metric)}}
 
-Run [`directory_measure`](@ref) on a package's `src/` directory. `pkg`
+Run [`measure_directory`](@ref) on a package's `src/` directory. `pkg`
 may be a loaded `Module` or a package name string.
 """
-function package_measure end
+function measure_package end
 
 """
     check_measure(metric, path_or_pkg;
@@ -168,11 +187,27 @@ Assert that no definition's `metric` score exceeds `max_value`. Returns
 the files containing violations (or empty if none). Throws when
 violations are present and `throw_on_violation` is `true`.
 
-For built-in metrics, `max_value` defaults to a conventional threshold
-(10 for cyclomatic, 15 for cognitive, 5 for argument count). User-
-defined metrics should pass `max_value` explicitly.
+`max_value` defaults to a conventional threshold (10 for cyclomatic,
+15 for cognitive, 5 for argument count).
+
+The canonical name is `check_measure` (semantics differ from the rest
+of the family — it asserts and throws rather than returning data).
+[`measure_check`](@ref) is provided as an exact alias so the verb shows
+up in `measure_<TAB>` completion alongside the rest of the family.
 """
 function check_measure end
+
+"""
+    measure_check(metric, path_or_pkg;
+                  max_value=<built-in default>,
+                  throw_on_violation=true, kwargs...)
+        -> Vector{FileMeasure{typeof(metric)}}
+
+Exact alias of [`check_measure`](@ref); see its docstring for full
+behaviour. Provided for discoverability so the assert / threshold-check
+verb shows up under `measure_<TAB>` at the REPL.
+"""
+const measure_check = check_measure
 
 # `metric_label` and `default_max_value` are internal-ish traits used
 # (respectively) for default error-message formatting and for the

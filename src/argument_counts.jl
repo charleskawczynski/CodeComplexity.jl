@@ -6,7 +6,7 @@
 # `Internals` (see `src/internals/argument_counts.jl`).
 
 """
-    measure(::ArgumentCountComplexity, expr) -> Int
+    measure_code(::ArgumentCountComplexity, expr) -> Int
 
 Parameter count of a function-like definition (`function`, short-form `=`,
 `->`, `macro`) or of a `:call` / `:tuple` signature. Returns `0` for any
@@ -16,10 +16,10 @@ other expression. Each positional slot counts as one; keyword slots inside
 Aligns with Ruff's [`PLR0913`](https://docs.astral.sh/ruff/rules/too-many-arguments/) /
 `lint.pylint.max-args`, not with older Pylint exclusions.
 """
-function measure(::ArgumentCountComplexity, expr)
+function measure_code(::ArgumentCountComplexity, expr)
     expr isa Expr || return 0
     return Internals._argument_count_for_head(Val(expr.head), expr)
 end
 
-measure(metric::ArgumentCountComplexity, code::AbstractString) =
-    measure(metric, Internals._parse_code(code))
+measure_code(metric::ArgumentCountComplexity, code::AbstractString) =
+    measure_code(metric, Internals._parse_code(code))

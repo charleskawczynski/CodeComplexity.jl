@@ -1,5 +1,5 @@
 # Cognitive-complexity helpers and hook overrides. Public scoring
-# (`measure(::CognitiveComplexity, …)`) is in `src/cognitive_complexity.jl`.
+# (`measure_code(::CognitiveComplexity, …)`) is in `src/cognitive_complexity.jl`.
 #
 # Notes on Julia-specific deviations from the SonarSource white paper are
 # in the parent file's docstring.

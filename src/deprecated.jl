@@ -1,40 +1,37 @@
 # Backward-compatibility shims for older API surfaces. Two layers:
 #
-#   * v1 (pre-singleton) names: `cyclomatic_complexity`,
-#     `cognitive_complexity[_report]`, `argument_count_report`, `file_*`,
-#     `directory_*`, `package_*`, `check_*`, plus the type aliases
-#     `FunctionCognitiveComplexity`, `FileCognitiveComplexity`,
-#     `FunctionArguments`, `FileArguments`.
+#   * v1 (pre-singleton) names that were actually released:
+#     `cyclomatic_complexity`, `argument_count_report`, the argument-count
+#     `file_*` / `directory_*` / `package_*` / `check_*` family, and the
+#     type aliases `FunctionArguments` / `FileArguments`.
 #
 #   * v2 (renamed-but-still-complexity-flavoured) names:
 #     `metric_complexity`, `complexity_report`, `file_complexity`,
 #     `directory_complexity`, `package_complexity`, `check_complexity`,
 #     `FunctionComplexity`, `FileComplexity`.
 #
+# `CognitiveComplexity` and its API have not been released; they ship for
+# the first time alongside the metric-neutral verbs, so they have no
+# v1 shims here.
+#
 # Everything in this file forwards into the v3 unified API in `api.jl` /
 # `common.jl` / the per-metric files, with a `Base.depwarn`. New code
-# should use `measure`, `measure_report`, `file_measure`,
-# `directory_measure`, `package_measure`, and `check_measure` with an
+# should use `measure_code`, `measure_report`, `measure_file`,
+# `measure_directory`, `measure_package`, and `check_measure` with an
 # explicit `AbstractMetric` argument.
 #
-# To keep `using CodeComplexity` workflows from breaking, the entire
-# previous export surface is re-exported below. The new `measure`-
-# suffixed names are intentionally NOT exported — new code should pull
-# them in explicitly with `import CodeComplexity: measure, ...` or
-# qualify via `import CodeComplexity as CC`.
+# The metric singletons, parametric result types, and the new `measure_*`
+# verbs are exported from `src/api.jl`; this file additionally re-exports
+# the previously-released deprecated names plus the two
+# previously-exported internal traits (`metric_label`, `default_max_value`)
+# so that existing `using CodeComplexity` code continues to work.
 
 export
-    # Metric singletons (still part of the public API, previously exported).
-    AbstractMetric,
-    CyclomaticComplexity,
-    CognitiveComplexity,
-    ArgumentCountComplexity,
     # Internal traits (previously exported; new code should treat them
     # as implementation details).
     metric_label,
     default_max_value,
-    # v2 result types and verbs (forward to the v3 `*Measure` types and
-    # `*_measure` verbs with `Base.depwarn`).
+    # v2 result-type aliases and `*_complexity` verbs.
     FunctionComplexity,
     FileComplexity,
     metric_complexity,
@@ -43,16 +40,8 @@ export
     directory_complexity,
     package_complexity,
     check_complexity,
-    # v1 cognitive deprecations.
+    # v1 cyclomatic deprecations.
     cyclomatic_complexity,
-    cognitive_complexity,
-    cognitive_complexity_report,
-    file_cognitive_complexity,
-    directory_cognitive_complexity,
-    package_cognitive_complexity,
-    check_cognitive_complexity,
-    FunctionCognitiveComplexity,
-    FileCognitiveComplexity,
     # v1 argument-count deprecations.
     argument_count_report,
     file_argument_counts,
@@ -65,8 +54,6 @@ export
 # --- Type aliases ----------------------------------------------------------
 
 # v1 metric-specific aliases.
-const FunctionCognitiveComplexity = FunctionMeasure{CognitiveComplexity}
-const FileCognitiveComplexity = FileMeasure{CognitiveComplexity}
 const FunctionArguments = FunctionMeasure{ArgumentCountComplexity}
 const FileArguments = FileMeasure{ArgumentCountComplexity}
 
@@ -84,7 +71,7 @@ FunctionMeasure(name::AbstractString, value::Integer, line::Integer) =
 # them keeps working.
 
 function Base.getproperty(fc::FunctionMeasure{M}, name::Symbol) where {M}
-    if name === :complexity && (M === CyclomaticComplexity || M === CognitiveComplexity)
+    if name === :complexity && M === CyclomaticComplexity
         return getfield(fc, :value)
     elseif name === :arg_count && M === ArgumentCountComplexity
         return getfield(fc, :value)
@@ -93,8 +80,7 @@ function Base.getproperty(fc::FunctionMeasure{M}, name::Symbol) where {M}
 end
 
 function Base.getproperty(fc::FileMeasure{M}, name::Symbol) where {M}
-    if name === :total_complexity &&
-       (M === CyclomaticComplexity || M === CognitiveComplexity)
+    if name === :total_complexity && M === CyclomaticComplexity
         return getfield(fc, :total_value)
     elseif name === :total_arguments && M === ArgumentCountComplexity
         return getfield(fc, :total_value)
@@ -104,7 +90,7 @@ end
 
 function Base.propertynames(fc::FunctionMeasure{M}, private::Bool = false) where {M}
     base = (:name, :value, :line)
-    if M === CyclomaticComplexity || M === CognitiveComplexity
+    if M === CyclomaticComplexity
         return (base..., :complexity)
     elseif M === ArgumentCountComplexity
         return (base..., :arg_count)
@@ -114,7 +100,7 @@ end
 
 function Base.propertynames(fc::FileMeasure{M}, private::Bool = false) where {M}
     base = (:path, :functions, :total_value)
-    if M === CyclomaticComplexity || M === CognitiveComplexity
+    if M === CyclomaticComplexity
         return (base..., :total_complexity)
     elseif M === ArgumentCountComplexity
         return (base..., :total_arguments)
@@ -123,17 +109,17 @@ function Base.propertynames(fc::FileMeasure{M}, private::Bool = false) where {M}
 end
 
 # ===========================================================================
-# v2 deprecation shims: `*_complexity` verbs forward to `*_measure` /
-# `measure` / `measure_report`.
+# v2 deprecation shims: `*_complexity` verbs forward to the new
+# `measure_*` family / `check_measure`.
 # ===========================================================================
 
 function metric_complexity(metric::AbstractMetric, x)
     Base.depwarn(
         "`metric_complexity(metric, x)` is deprecated; use " *
-        "`measure(metric, x)`.",
+        "`measure_code(metric, x)`.",
         :metric_complexity,
     )
-    return measure(metric, x)
+    return measure_code(metric, x)
 end
 
 function complexity_report(
@@ -158,10 +144,10 @@ function file_complexity(
 )
     Base.depwarn(
         "`file_complexity(metric, path; ...)` is deprecated; use " *
-        "`file_measure(metric, path; ...)`.",
+        "`measure_file(metric, path; ...)`.",
         :file_complexity,
     )
-    return file_measure(metric, filepath; max_value = max_value, kwargs...)
+    return measure_file(metric, filepath; max_value = max_value, kwargs...)
 end
 
 function directory_complexity(
@@ -173,10 +159,10 @@ function directory_complexity(
 )
     Base.depwarn(
         "`directory_complexity(metric, dir; ...)` is deprecated; use " *
-        "`directory_measure(metric, dir; ...)`.",
+        "`measure_directory(metric, dir; ...)`.",
         :directory_complexity,
     )
-    return directory_measure(
+    return measure_directory(
         metric,
         dirpath;
         recursive = recursive,
@@ -193,10 +179,10 @@ function package_complexity(
 )
     Base.depwarn(
         "`package_complexity(metric, pkg; ...)` is deprecated; use " *
-        "`package_measure(metric, pkg; ...)`.",
+        "`measure_package(metric, pkg; ...)`.",
         :package_complexity,
     )
-    return package_measure(metric, pkg; max_value = max_value, kwargs...)
+    return measure_package(metric, pkg; max_value = max_value, kwargs...)
 end
 
 function check_complexity(
@@ -229,10 +215,10 @@ end
 function cyclomatic_complexity(expr)
     Base.depwarn(
         "`cyclomatic_complexity(expr)` is deprecated; use " *
-        "`measure(CyclomaticComplexity(), expr)` instead.",
+        "`measure_code(CyclomaticComplexity(), expr)` instead.",
         :cyclomatic_complexity,
     )
-    return measure(CyclomaticComplexity(), expr)
+    return measure_code(CyclomaticComplexity(), expr)
 end
 
 function complexity_report(
@@ -253,10 +239,10 @@ function file_complexity(
 )
     Base.depwarn(
         "`file_complexity(path; max_complexity=...)` is deprecated; use " *
-        "`file_measure(CyclomaticComplexity(), path; max_value=...)`.",
+        "`measure_file(CyclomaticComplexity(), path; max_value=...)`.",
         :file_complexity,
     )
-    return file_measure(CyclomaticComplexity(), filepath; max_value = max_complexity)
+    return measure_file(CyclomaticComplexity(), filepath; max_value = max_complexity)
 end
 
 function directory_complexity(
@@ -266,10 +252,10 @@ function directory_complexity(
 )
     Base.depwarn(
         "`directory_complexity(dir; ...)` is deprecated; use " *
-        "`directory_measure(CyclomaticComplexity(), dir; max_value=...)`.",
+        "`measure_directory(CyclomaticComplexity(), dir; max_value=...)`.",
         :directory_complexity,
     )
-    return directory_measure(
+    return measure_directory(
         CyclomaticComplexity(),
         dirpath;
         recursive = recursive,
@@ -283,10 +269,10 @@ function package_complexity(
 )
     Base.depwarn(
         "`package_complexity(pkg; max_complexity=...)` is deprecated; use " *
-        "`package_measure(CyclomaticComplexity(), pkg; max_value=...)`.",
+        "`measure_package(CyclomaticComplexity(), pkg; max_value=...)`.",
         :package_complexity,
     )
-    return package_measure(CyclomaticComplexity(), pkg; max_value = max_complexity)
+    return measure_package(CyclomaticComplexity(), pkg; max_value = max_complexity)
 end
 
 function package_complexity(
@@ -295,10 +281,10 @@ function package_complexity(
 )
     Base.depwarn(
         "`package_complexity(pkg_name; max_complexity=...)` is deprecated; use " *
-        "`package_measure(CyclomaticComplexity(), pkg_name; max_value=...)`.",
+        "`measure_package(CyclomaticComplexity(), pkg_name; max_value=...)`.",
         :package_complexity,
     )
-    return package_measure(
+    return measure_package(
         CyclomaticComplexity(),
         pkg_name;
         max_value = max_complexity,
@@ -368,10 +354,10 @@ function file_argument_counts(
 )
     Base.depwarn(
         "`file_argument_counts` is deprecated; use " *
-        "`file_measure(ArgumentCountComplexity(), path; max_value=..., ignore=...)`.",
+        "`measure_file(ArgumentCountComplexity(), path; max_value=..., ignore=...)`.",
         :file_argument_counts,
     )
-    return file_measure(
+    return measure_file(
         ArgumentCountComplexity(),
         filepath;
         max_value = max_args,
@@ -387,10 +373,10 @@ function directory_argument_counts(
 )
     Base.depwarn(
         "`directory_argument_counts` is deprecated; use " *
-        "`directory_measure(ArgumentCountComplexity(), dir; ...)`.",
+        "`measure_directory(ArgumentCountComplexity(), dir; ...)`.",
         :directory_argument_counts,
     )
-    return directory_measure(
+    return measure_directory(
         ArgumentCountComplexity(),
         dirpath;
         recursive = recursive,
@@ -406,10 +392,10 @@ function package_argument_counts(
 )
     Base.depwarn(
         "`package_argument_counts` is deprecated; use " *
-        "`package_measure(ArgumentCountComplexity(), pkg; max_value=..., ignore=...)`.",
+        "`measure_package(ArgumentCountComplexity(), pkg; max_value=..., ignore=...)`.",
         :package_argument_counts,
     )
-    return package_measure(
+    return measure_package(
         ArgumentCountComplexity(),
         pkg;
         max_value = max_args,

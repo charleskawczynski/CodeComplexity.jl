@@ -1,5 +1,5 @@
 # Public verbs that aren't tied to a single metric: `measure_report`,
-# `file_measure`, `directory_measure`, `package_measure`, `check_measure`,
+# `measure_file`, `measure_directory`, `measure_package`, `check_measure`,
 # the per-metric `metric_label` / `default_max_value` lookups, and the
 # `Base.show` methods. All of the AST walking, file/directory traversal,
 # and violation formatting lives in `Internals` (see `src/Internals.jl`
@@ -10,10 +10,8 @@
 # `metric_label` supplies the human-readable name used in default error
 # messages; `default_max_value` is the threshold `check_measure` falls
 # back to when no `max_value` kwarg is passed. Both are intended to stay
-# implementation details: not part of the documented public API, only
-# defined for built-in metrics, and re-exported only for backward
-# compatibility from `src/deprecated.jl`. User-defined metrics that want
-# a default threshold should pass `max_value=` explicitly to `check_measure`.
+# implementation details: not part of the documented public API, and
+# re-exported only for backward compatibility from `src/deprecated.jl`.
 
 metric_label(::CyclomaticComplexity) = "Cyclomatic complexity"
 metric_label(::CognitiveComplexity) = "Cognitive complexity"
@@ -39,7 +37,7 @@ end
 
 # --- file / directory / package walks --------------------------------------
 
-function file_measure(
+function measure_file(
     metric::AbstractMetric,
     filepath::AbstractString;
     max_value::Union{Int, Nothing} = nothing,
@@ -51,7 +49,7 @@ function file_measure(
     return FileMeasure(filepath, fns)
 end
 
-function directory_measure(
+function measure_directory(
     metric::M,
     dirpath::AbstractString;
     recursive::Bool = true,
@@ -62,7 +60,7 @@ function directory_measure(
     results = FileMeasure{M}[]
     for filepath in Internals._collect_jl_files(dirpath, recursive)
         try
-            fc = file_measure(metric, filepath; max_value = max_value, kwargs...)
+            fc = measure_file(metric, filepath; max_value = max_value, kwargs...)
             if max_value === nothing || !isempty(fc.functions)
                 push!(results, fc)
             end
@@ -73,7 +71,7 @@ function directory_measure(
     return results
 end
 
-function package_measure(
+function measure_package(
     metric::AbstractMetric,
     pkg::Module;
     max_value::Union{Int, Nothing} = nothing,
@@ -83,7 +81,7 @@ function package_measure(
     pkg_path === nothing &&
         throw(ArgumentError("Cannot determine source path for module $pkg"))
     src_dir = dirname(pkg_path)
-    return directory_measure(
+    return measure_directory(
         metric,
         src_dir;
         recursive = true,
@@ -92,7 +90,7 @@ function package_measure(
     )
 end
 
-function package_measure(
+function measure_package(
     metric::AbstractMetric,
     pkg_name::AbstractString;
     max_value::Union{Int, Nothing} = nothing,
@@ -100,7 +98,7 @@ function package_measure(
 )
     src_dir = Internals._find_package_src_dir(pkg_name)
     src_dir === nothing && throw(ArgumentError("Package not found: $pkg_name"))
-    return directory_measure(
+    return measure_directory(
         metric,
         src_dir;
         recursive = true,
@@ -119,10 +117,10 @@ function check_measure(
     kwargs...,
 )
     violations = if isfile(path)
-        fc = file_measure(metric, path; max_value = max_value, kwargs...)
+        fc = measure_file(metric, path; max_value = max_value, kwargs...)
         isempty(fc.functions) ? typeof(fc)[] : [fc]
     elseif isdir(path)
-        directory_measure(
+        measure_directory(
             metric,
             path;
             recursive = true,
@@ -143,7 +141,7 @@ function check_measure(
     throw_on_violation::Bool = true,
     kwargs...,
 )
-    violations = package_measure(metric, pkg; max_value = max_value, kwargs...)
+    violations = measure_package(metric, pkg; max_value = max_value, kwargs...)
     Internals._handle_violations(metric, violations, max_value, throw_on_violation)
     return violations
 end

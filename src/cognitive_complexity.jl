@@ -14,7 +14,7 @@
 # `src/internals/cognitive.jl`).
 
 """
-    measure(::CognitiveComplexity, expr) -> Int
+    measure_code(::CognitiveComplexity, expr) -> Int
 
 Cognitive complexity (Campbell / SonarSource). Increments come from `if`,
 `elseif`, `else`, ternary, `for`/`while`, `catch`, each new sequence of
@@ -23,9 +23,9 @@ nesting inside a control-flow structure adds an extra increment. Lambdas
 and nested function/macro definitions raise the nesting level for their
 body but do not add an increment themselves.
 """
-function measure(::CognitiveComplexity, expr)
+function measure_code(::CognitiveComplexity, expr)
     return Internals._cognitive_walk(expr, 0, false)
 end
 
-measure(metric::CognitiveComplexity, code::AbstractString) =
-    measure(metric, Internals._parse_code(code))
+measure_code(metric::CognitiveComplexity, code::AbstractString) =
+    measure_code(metric, Internals._parse_code(code))

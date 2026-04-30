@@ -3,7 +3,7 @@
 # qualified API.
 
 const ARGC = CC.ArgumentCountComplexity()
-arg_measure(x) = CC.measure(ARGC, x)
+arg_measure(x) = CC.measure_code(ARGC, x)
 
 @testset "Argument count (PLR0913-style)" begin
     @testset "measure_report counting" begin
@@ -168,7 +168,7 @@ end
         @test fl.total_value == 5
     end
 
-    @testset "file_measure and check_measure" begin
+    @testset "measure_file and check_measure" begin
         mktempdir() do tmpdir
             file = joinpath(tmpdir, "sig.jl")
             write(
@@ -182,11 +182,11 @@ function bad(a, b, c, d, e, f)
 end
 """,
             )
-            fa = CC.file_measure(ARGC, file)
+            fa = CC.measure_file(ARGC, file)
             @test length(fa.functions) == 2
             @test fa.total_value == 9
 
-            fa_v = CC.file_measure(ARGC, file; max_value = 5)
+            fa_v = CC.measure_file(ARGC, file; max_value = 5)
             @test length(fa_v.functions) == 1
             @test fa_v.functions[1].name == "bad"
 

@@ -1,6 +1,6 @@
 # Included from runtests.jl. Exercises the unified singleton-pattern API
-# (measure / measure_report / file_measure / directory_measure /
-# package_measure / check_measure dispatched on an `AbstractMetric` first
+# (measure / measure_report / measure_file / measure_directory /
+# measure_package / check_measure dispatched on an `AbstractMetric` first
 # argument) through the qualified `CC.` form.
 
 const ALL_METRICS = (
@@ -21,7 +21,7 @@ const ALL_METRICS = (
     @test CC.default_max_value(CC.ArgumentCountComplexity()) == 5
 end
 
-@testset "measure dispatch" begin
+@testset "measure_code dispatch" begin
     code = """
     function f(x, y)
         if x > 0
@@ -30,14 +30,14 @@ end
         return y
     end
     """
-    @test CC.measure(CC.CyclomaticComplexity(), code) == 2
-    @test CC.measure(CC.CognitiveComplexity(), code) == 1
+    @test CC.measure_code(CC.CyclomaticComplexity(), code) == 2
+    @test CC.measure_code(CC.CognitiveComplexity(), code) == 1
 
     expr = Meta.parse("function g(a, b, c, d); return a; end")
-    @test CC.measure(CC.ArgumentCountComplexity(), expr) == 4
-    @test CC.measure(CC.ArgumentCountComplexity(), :((a, b, c)::Foo)) == 0
-    @test CC.measure(CC.ArgumentCountComplexity(), Meta.parse("h(a, b) = a + b")) == 2
-    @test CC.measure(CC.ArgumentCountComplexity(), Meta.parse("(a, b) -> a + b")) == 2
+    @test CC.measure_code(CC.ArgumentCountComplexity(), expr) == 4
+    @test CC.measure_code(CC.ArgumentCountComplexity(), :((a, b, c)::Foo)) == 0
+    @test CC.measure_code(CC.ArgumentCountComplexity(), Meta.parse("h(a, b) = a + b")) == 2
+    @test CC.measure_code(CC.ArgumentCountComplexity(), Meta.parse("(a, b) -> a + b")) == 2
 end
 
 @testset "measure_report parametric return type" begin
@@ -50,7 +50,7 @@ end
     end
 end
 
-@testset "file_measure dispatch" begin
+@testset "measure_file dispatch" begin
     mktempdir() do tmpdir
         path = joinpath(tmpdir, "f.jl")
         write(
@@ -71,23 +71,23 @@ end
         )
 
         for metric in ALL_METRICS
-            fc = CC.file_measure(metric, path)
+            fc = CC.measure_file(metric, path)
             @test fc isa CC.FileMeasure{typeof(metric)}
             @test fc.path == path
             @test length(fc.functions) == 2
             @test fc.total_value >= 0
         end
 
-        cyclo = CC.file_measure(CC.CyclomaticComplexity(), path; max_value = 1)
+        cyclo = CC.measure_file(CC.CyclomaticComplexity(), path; max_value = 1)
         @test all(f -> f.value > 1, cyclo.functions)
 
-        argc = CC.file_measure(CC.ArgumentCountComplexity(), path; max_value = 5)
+        argc = CC.measure_file(CC.ArgumentCountComplexity(), path; max_value = 5)
         @test length(argc.functions) == 1
         @test argc.functions[1].name == "bad"
     end
 end
 
-@testset "directory_measure dispatch" begin
+@testset "measure_directory dispatch" begin
     mktempdir() do tmpdir
         write(
             joinpath(tmpdir, "a.jl"),
@@ -99,12 +99,12 @@ end
         )
 
         for metric in ALL_METRICS
-            results = CC.directory_measure(metric, tmpdir)
+            results = CC.measure_directory(metric, tmpdir)
             @test results isa Vector{CC.FileMeasure{typeof(metric)}}
             @test length(results) == 2
         end
 
-        violators = CC.directory_measure(
+        violators = CC.measure_directory(
             CC.ArgumentCountComplexity(),
             tmpdir;
             max_value = 5,
@@ -193,9 +193,9 @@ end
     @test isempty(fns2)
 end
 
-@testset "package_measure on this package" begin
+@testset "measure_package on this package" begin
     for metric in ALL_METRICS
-        results = CC.package_measure(metric, CC)
+        results = CC.measure_package(metric, CC)
         @test results isa Vector{CC.FileMeasure{typeof(metric)}}
         @test !isempty(results)
     end

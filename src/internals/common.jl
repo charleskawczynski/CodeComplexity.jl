@@ -41,7 +41,7 @@ function _extract_function_results(
             results,
             FunctionMeasure{M}(
                 "<anonymous>",
-                measure(metric, expr),
+                measure_code(metric, expr),
                 _get_line_number(expr),
             ),
         )
@@ -52,7 +52,7 @@ function _extract_function_results(
                 results,
                 FunctionMeasure{M}(
                     name,
-                    measure(metric, expr),
+                    measure_code(metric, expr),
                     _get_line_number(expr),
                 ),
             )
@@ -76,7 +76,7 @@ function _record_named_definition!(
             results,
             FunctionMeasure{M}(
                 name,
-                measure(metric, expr),
+                measure_code(metric, expr),
                 _get_line_number(expr),
             ),
         )

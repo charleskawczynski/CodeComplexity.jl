@@ -2,7 +2,7 @@
 # exercised through the v3 API.
 
 const COG = CC.CognitiveComplexity()
-cog_measure(x) = CC.measure(COG, x)
+cog_measure(x) = CC.measure_code(COG, x)
 
 @testset "Cognitive: trivial cases" begin
     @testset "trivial function" begin
@@ -504,41 +504,41 @@ end
 """,
         )
 
-        @testset "file_measure" begin
-            fc = CC.file_measure(COG, good)
+        @testset "measure_file" begin
+            fc = CC.measure_file(COG, good)
             @test fc.path == good
             @test length(fc.functions) == 1
             @test fc.functions[1].value == 0
 
-            fc = CC.file_measure(COG, bad)
+            fc = CC.measure_file(COG, bad)
             @test length(fc.functions) == 1
             @test fc.functions[1].name == "nested"
             @test fc.functions[1].value == 6
             @test fc.total_value == 6
         end
 
-        @testset "file_measure max_value" begin
-            fc = CC.file_measure(COG, bad; max_value = 3)
+        @testset "measure_file max_value" begin
+            fc = CC.measure_file(COG, bad; max_value = 3)
             @test length(fc.functions) == 1
 
-            fc = CC.file_measure(COG, bad; max_value = 100)
+            fc = CC.measure_file(COG, bad; max_value = 100)
             @test isempty(fc.functions)
             @test fc.total_value == 0
         end
 
         @testset "file not found" begin
-            @test_throws ArgumentError CC.file_measure(COG, "nope.jl")
+            @test_throws ArgumentError CC.measure_file(COG, "nope.jl")
         end
 
-        @testset "directory_measure" begin
-            results = CC.directory_measure(COG, tmpdir)
+        @testset "measure_directory" begin
+            results = CC.measure_directory(COG, tmpdir)
             @test length(results) == 2
 
-            results = CC.directory_measure(COG, tmpdir; max_value = 3)
+            results = CC.measure_directory(COG, tmpdir; max_value = 3)
             @test length(results) == 1
             @test occursin("bad.jl", results[1].path)
 
-            @test_throws ArgumentError CC.directory_measure(COG, "missing")
+            @test_throws ArgumentError CC.measure_directory(COG, "missing")
         end
 
         @testset "check_measure violates" begin
@@ -588,7 +588,7 @@ end
     end
 end
 
-@testset "Cognitive: package_measure" begin
+@testset "Cognitive: measure_package" begin
     v = CC.check_measure(COG, CC; max_value = 50, throw_on_violation = false)
     @test v isa Vector{<:CC.FileMeasure}
 end

@@ -1,5 +1,5 @@
 # Cyclomatic-complexity helpers and hook overrides. Public scoring
-# (`measure(::CyclomaticComplexity, …)`) is in `src/cyclomatic_complexity.jl`.
+# (`measure_code(::CyclomaticComplexity, …)`) is in `src/cyclomatic_complexity.jl`.
 
 function _cyclomatic_decisions(expr)
     expr isa Expr || return 0

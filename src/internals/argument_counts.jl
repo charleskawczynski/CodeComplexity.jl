@@ -1,5 +1,5 @@
 # Argument-count helpers and hook overrides. Public scoring
-# (`measure(::ArgumentCountComplexity, …)`) is in `src/argument_counts.jl`.
+# (`measure_code(::ArgumentCountComplexity, …)`) is in `src/argument_counts.jl`.
 
 _argument_count_for_head(::Val, ::Expr) = 0
 

@@ -23,7 +23,7 @@ using ..CodeComplexity:
     ArgumentCountComplexity,
     FunctionMeasure,
     FileMeasure,
-    measure,
+    measure_code,
     metric_label
 
 include("internals/ast.jl")

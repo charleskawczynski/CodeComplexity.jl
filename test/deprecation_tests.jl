@@ -88,45 +88,6 @@ end
     end
 end
 
-@testset "Deprecations: v1 cognitive shims" begin
-    code = """
-    function f(x)
-        if x > 0
-            if x > 1
-                return x
-            end
-        end
-    end
-    """
-
-    @test CC.cognitive_complexity(code) == 3
-
-    r = CC.cognitive_complexity_report(code)
-    @test length(r) == 1
-    @test r[1].complexity == 3
-    @test r[1].value == 3
-
-    mktempdir() do tmpdir
-        path = joinpath(tmpdir, "c.jl")
-        write(path, code)
-        fm = CC.file_cognitive_complexity(path)
-        @test fm.total_complexity == 3
-
-        dr = CC.directory_cognitive_complexity(tmpdir)
-        @test length(dr) == 1
-
-        v = CC.check_cognitive_complexity(
-            path;
-            max_complexity = 1,
-            throw_on_violation = false,
-        )
-        @test length(v) == 1
-    end
-
-    pkg = CC.package_cognitive_complexity(CC; max_complexity = 50)
-    @test pkg isa Vector{<:CC.FileMeasure}
-end
-
 @testset "Deprecations: v1 argument-count shims" begin
     code = """
     function many(a, b, c, d, e, f) end
@@ -166,8 +127,6 @@ end
 @testset "Deprecations: type aliases" begin
     @test CC.FunctionComplexity === CC.FunctionMeasure
     @test CC.FileComplexity === CC.FileMeasure
-    @test CC.FunctionCognitiveComplexity === CC.FunctionMeasure{CC.CognitiveComplexity}
-    @test CC.FileCognitiveComplexity === CC.FileMeasure{CC.CognitiveComplexity}
     @test CC.FunctionArguments === CC.FunctionMeasure{CC.ArgumentCountComplexity}
     @test CC.FileArguments === CC.FileMeasure{CC.ArgumentCountComplexity}
 

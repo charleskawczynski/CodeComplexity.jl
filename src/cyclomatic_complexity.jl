@@ -7,13 +7,13 @@
 # `src/internals/cyclomatic.jl`).
 
 """
-    measure(::CyclomaticComplexity, expr) -> Int
+    measure_code(::CyclomaticComplexity, expr) -> Int
 
 McCabe cyclomatic complexity (decision points + 1). Minimum is 1.
 """
-function measure(::CyclomaticComplexity, expr)
+function measure_code(::CyclomaticComplexity, expr)
     return Internals._cyclomatic_decisions(expr) + 1
 end
 
-measure(metric::CyclomaticComplexity, code::AbstractString) =
-    measure(metric, Internals._parse_code(code))
+measure_code(metric::CyclomaticComplexity, code::AbstractString) =
+    measure_code(metric, Internals._parse_code(code))

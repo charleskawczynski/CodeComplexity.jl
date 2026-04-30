@@ -22,32 +22,19 @@ Pkg.add("CodeComplexity")
 
 ## One API, every metric
 
-Every entry point dispatches on a metric singleton:
+Every entry point dispatches on a metric singleton. The metric types,
+result types, and the verbs are all exported, so the simplest entry
+is `using CodeComplexity`:
 
 ```julia
-import CodeComplexity:
-    CyclomaticComplexity,
-    CognitiveComplexity,
-    ArgumentCountComplexity,
-    AbstractMetric,
-    FunctionMeasure,
-    FileMeasure,
-    measure,
-    measure_report,
-    file_measure,
-    directory_measure,
-    package_measure,
-    check_measure
+using CodeComplexity
 ```
 
-The new `measure`-suffixed entry points are intentionally **not**
-exported, so new code pulls them in explicitly (above) or qualifies
-them via `import CodeComplexity as CC`. The previously-exported
-names — the metric singletons, the deprecated `*_complexity` verbs,
-the `Function*` / `File*` types, `cyclomatic_complexity`,
-`argument_count_report`, … — remain available via
-`using CodeComplexity` for backwards compatibility; deprecated verbs
-emit `Base.depwarn` notices that point at the new names.
+All public verbs share a `measure_*` prefix. The threshold-checking
+verb's canonical name is `check_measure` (its semantics differ from the
+rest of the family — it asserts and throws rather than returning data),
+but it's also available as `measure_check`, an exact `const` alias, so
+that `measure_<TAB>` at the REPL reveals the entire family at once.
 
 | Singleton | What it measures | Default threshold |
 |-----------|------------------|-------------------|
@@ -58,20 +45,19 @@ emit `Base.depwarn` notices that point at the new names.
 All metrics plug into the same six verbs:
 
 ```julia
-measure(metric, expr_or_code)               # one expression
-measure_report(metric, code; max_value=...) # per-definition vector
-file_measure(metric, path; max_value=...)   # one file
-directory_measure(metric, dir; recursive=true, max_value=...)
-package_measure(metric, pkg_or_name; max_value=...)
+measure_code(metric, expr_or_code)               # one expression
+measure_report(metric, code; max_value=...)      # per-definition vector
+measure_file(metric, path; max_value=...)        # one file
+measure_directory(metric, dir; recursive=true, max_value=...)
+measure_package(metric, pkg_or_name; max_value=...)
+measure_check(metric, path_or_pkg; max_value=..., throw_on_violation=true) # exact alias of `check_measure`
 check_measure(metric, path_or_pkg; max_value=..., throw_on_violation=true)
 ```
 
 ## Quick start
 
 ```julia
-import CodeComplexity:
-    CyclomaticComplexity, CognitiveComplexity, ArgumentCountComplexity,
-    measure, measure_report, package_measure, check_measure
+using CodeComplexity
 
 code = """
 function foo(x)
@@ -83,12 +69,12 @@ function foo(x)
 end
 """
 
-measure(CyclomaticComplexity(), code)  # 2
-measure(CognitiveComplexity(),  code)  # 2
+measure_code(CyclomaticComplexity(), code)  # 2
+measure_code(CognitiveComplexity(),  code)  # 2
 
-# `measure(ArgumentCountComplexity(), …)` operates on a single function-
-# like expression, so use `measure_report` to score the definitions
-# inside a code string:
+# `measure_code(ArgumentCountComplexity(), …)` operates on a single
+# function-like expression, so use `measure_report` to score the
+# definitions inside a code string:
 measure_report(ArgumentCountComplexity(), code)[1].value  # 1
 
 # Per-definition reports
@@ -97,8 +83,8 @@ measure_report(CognitiveComplexity(),  read("src/MyModule.jl", String);
                max_value = 15)
 
 # Whole-package scans
-package_measure(CyclomaticComplexity(), CodeComplexity)
-package_measure(CognitiveComplexity(),  "MyPackage")
+measure_package(CyclomaticComplexity(), CodeComplexity)
+measure_package(CognitiveComplexity(),  "MyPackage")
 
 # Threshold checks (built-in default thresholds — see table above)
 check_measure(CyclomaticComplexity(),    MyPackage)                 # 10
@@ -129,7 +115,7 @@ struct FileMeasure{M <: AbstractMetric}
 end
 ```
 
-So `file_measure(CognitiveComplexity(), …)` returns
+So `measure_file(CognitiveComplexity(), …)` returns
 `FileMeasure{CognitiveComplexity}`, etc. The metric is recoverable from
 the type alone, and you can dispatch on it.
 
@@ -144,7 +130,7 @@ counts `catch`, collapses runs of like `&&`/`||` into one increment, and
 adds one for direct recursion.
 
 ```julia
-measure(CognitiveComplexity(), """
+measure_code(CognitiveComplexity(), """
 function sumOfPrimes(maxv)
     total = 0
     for i in 1:maxv          # +1
@@ -216,38 +202,11 @@ check_measure(ArgumentCountComplexity(), MyPackage;
 - **Complex type objects** (e.g. `Union{Int,Nothing}`) use `nameof`; that string may not match a simple identifier in source — prefer symbols or strings when unsure.
 - **`->` lambdas** are reported as **`"<anonymous>"`** if you need to ignore them.
 
-## Adding a new metric
-
-`AbstractMetric` is open: anyone can implement a custom metric by
-defining a singleton and a `measure` method. Pass `max_value=`
-explicitly when calling `check_measure` on a custom metric.
-
-```julia
-import CodeComplexity: AbstractMetric, measure, check_measure
-
-struct LineCount <: AbstractMetric end
-
-function measure(::LineCount, expr)
-    expr isa Expr || return 0
-    body = length(expr.args) >= 2 ? expr.args[2] : nothing
-    return body isa Expr ? count(_ -> true, body.args) : 0
-end
-
-check_measure(LineCount(), MyPackage; max_value = 50)
-```
-
-You immediately get `measure_report(LineCount(), …)`,
-`file_measure(LineCount(), …)`, `directory_measure(LineCount(), …)`,
-`package_measure(LineCount(), …)`, and `check_measure(LineCount(), …)`
-for free.
-
 ## Use in tests and CI
 
 ```julia
 using Test
-import CodeComplexity:
-    CyclomaticComplexity, CognitiveComplexity, ArgumentCountComplexity,
-    check_measure
+using CodeComplexity
 import MyPackage
 
 @testset "Complexity" begin
@@ -263,61 +222,13 @@ Or scan a directory in a script:
 check_measure(CyclomaticComplexity(), "src/"; max_value = 15)
 ```
 
-## Source layout
+## Migrating from older versions
 
-The package is split into role-based files so adding a metric or piece
-of infrastructure has an obvious home:
-
-- `src/api.jl` — abstract type, metric singletons, result types, and the
-  public verb stubs with documentation. Implementation-free.
-- `src/common.jl` — shared infrastructure: AST extraction, file/
-  directory/package walks, threshold checking, error formatting,
-  internal trait tables for built-in metrics, and the `Base.show`
-  methods.
-- `src/cyclomatic_complexity.jl`, `src/cognitive_complexity.jl`,
-  `src/argument_counts.jl` — per-metric `measure(::M, expr)` plus any
-  metric-specific overrides.
-- `src/deprecated.jl` — backward-compatibility shims for older API
-  surfaces (see below).
-
-## Deprecated names
-
-Two earlier API surfaces remain available as deprecation shims that
-forward to the v3 API and emit `Base.depwarn` notices:
-
-- **v1 (pre-singleton):** `cyclomatic_complexity`, `cognitive_complexity`,
-  `cognitive_complexity_report`, `file_cognitive_complexity`, `argument_count_report`,
-  `check_argument_count`, `FunctionCognitiveComplexity`, `FileArguments`, …
-- **v2 (renamed-but-still-`*_complexity`):** `metric_complexity`,
-  `complexity_report`, `file_complexity`, `directory_complexity`,
-  `package_complexity`, `check_complexity`, `FunctionComplexity`,
-  `FileComplexity`.
-
-Migration map (representative entries; everything in the older surfaces
-forwards through the same way):
-
-| Old | New |
-|-----|-----|
-| `metric_complexity(metric, x)` | `measure(metric, x)` |
-| `complexity_report(metric, code; max_value=N)` | `measure_report(metric, code; max_value=N)` |
-| `file_complexity(metric, p; max_value=N)` | `file_measure(metric, p; max_value=N)` |
-| `directory_complexity(metric, d; …)` | `directory_measure(metric, d; …)` |
-| `package_complexity(metric, p; …)` | `package_measure(metric, p; …)` |
-| `check_complexity(metric, t; …)` | `check_measure(metric, t; …)` |
-| `FunctionComplexity{M}` / `FileComplexity{M}` | `FunctionMeasure{M}` / `FileMeasure{M}` |
-| `cyclomatic_complexity(x)` | `measure(CyclomaticComplexity(), x)` |
-| `cognitive_complexity(x)` | `measure(CognitiveComplexity(), x)` |
-| `argument_count_report(code; max_args=N, ignore=…)` | `measure_report(ArgumentCountComplexity(), code; max_value=N, ignore=…)` |
-| `file_cognitive_complexity` / `file_argument_counts` | `file_measure(<metric>, p; …)` |
-| `check_cognitive_complexity` / `check_argument_count` | `check_measure(<metric>, …)` |
-| `FunctionCognitiveComplexity`, `FileCognitiveComplexity` | `FunctionMeasure{CognitiveComplexity}`, `FileMeasure{CognitiveComplexity}` |
-| `FunctionArguments`, `FileArguments` | `FunctionMeasure{ArgumentCountComplexity}`, `FileMeasure{ArgumentCountComplexity}` |
-
-The old field names (`.complexity`, `.arg_count`, `.total_complexity`,
-`.total_arguments`) on the parametric types are forwarded transparently
-to `.value` / `.total_value` for source compatibility. All deprecated
-names are also re-exported, so existing `using CodeComplexity` code
-continues to work without modification.
+Two earlier API surfaces (the v1 pre-singleton names and the v2
+`*_complexity` verbs) are kept as deprecation shims that forward into
+the current API and emit `Base.depwarn` notices. See
+[MIGRATIONS.md](MIGRATIONS.md) for the migration map and field-name
+compatibility notes.
 
 ## Code style (JuliaFormatter)
 

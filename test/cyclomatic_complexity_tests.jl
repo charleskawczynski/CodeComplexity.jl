@@ -1,9 +1,9 @@
 # Included from runtests.jl — cyclomatic-complexity correctness tests
-# exercised through the v3 API: `CC.measure(CC.CyclomaticComplexity(), …)`,
+# exercised through the v3 API: `CC.measure_code(CC.CyclomaticComplexity(), …)`,
 # `CC.measure_report(CC.CyclomaticComplexity(), …)`, etc.
 
 const CYCLO = CC.CyclomaticComplexity()
-cyclo_measure(x) = CC.measure(CYCLO, x)
+cyclo_measure(x) = CC.measure_code(CYCLO, x)
 
 @testset "Cyclomatic: trivial cases" begin
     @testset "trivial function" begin
@@ -565,33 +565,33 @@ end
 """,
         )
 
-        @testset "file_measure" begin
-            fc = CC.file_measure(CYCLO, file1)
+        @testset "measure_file" begin
+            fc = CC.measure_file(CYCLO, file1)
             @test fc.path == file1
             @test length(fc.functions) == 2
             @test fc.total_value == 3  # 1 + 2
         end
 
-        @testset "directory_measure recursive" begin
-            results = CC.directory_measure(CYCLO, tmpdir; recursive = true)
+        @testset "measure_directory recursive" begin
+            results = CC.measure_directory(CYCLO, tmpdir; recursive = true)
             @test length(results) == 2
 
             total_funcs = sum(length(fc.functions) for fc in results)
             @test total_funcs == 3
         end
 
-        @testset "directory_measure non-recursive" begin
-            results = CC.directory_measure(CYCLO, tmpdir; recursive = false)
+        @testset "measure_directory non-recursive" begin
+            results = CC.measure_directory(CYCLO, tmpdir; recursive = false)
             @test length(results) == 1
             @test results[1].path == file1
         end
 
         @testset "file not found" begin
-            @test_throws ArgumentError CC.file_measure(CYCLO, "nonexistent.jl")
+            @test_throws ArgumentError CC.measure_file(CYCLO, "nonexistent.jl")
         end
 
         @testset "directory not found" begin
-            @test_throws ArgumentError CC.directory_measure(CYCLO, "nonexistent_dir")
+            @test_throws ArgumentError CC.measure_directory(CYCLO, "nonexistent_dir")
         end
     end
 end
@@ -756,7 +756,7 @@ end
         @test isempty(filtered)
     end
 
-    @testset "file_measure with max_value" begin
+    @testset "measure_file with max_value" begin
         mktempdir() do tmpdir
             file = joinpath(tmpdir, "test.jl")
             write(
@@ -777,18 +777,18 @@ end
     """,
             )
 
-            fc = CC.file_measure(CYCLO, file)
+            fc = CC.measure_file(CYCLO, file)
             @test length(fc.functions) == 2
             @test fc.total_value == 4
 
-            fc = CC.file_measure(CYCLO, file; max_value = 1)
+            fc = CC.measure_file(CYCLO, file; max_value = 1)
             @test length(fc.functions) == 1
             @test fc.functions[1].name == "high"
             @test fc.total_value == 3
         end
     end
 
-    @testset "directory_measure with max_value" begin
+    @testset "measure_directory with max_value" begin
         mktempdir() do tmpdir
             file1 = joinpath(tmpdir, "simple.jl")
             write(
@@ -823,16 +823,16 @@ end
    """,
             )
 
-            results = CC.directory_measure(CYCLO, tmpdir)
+            results = CC.measure_directory(CYCLO, tmpdir)
             @test length(results) == 2
 
-            results = CC.directory_measure(CYCLO, tmpdir; max_value = 2)
+            results = CC.measure_directory(CYCLO, tmpdir; max_value = 2)
             @test length(results) == 1
             @test basename(results[1].path) == "mixed.jl"
             @test length(results[1].functions) == 1
             @test results[1].functions[1].name == "d"
 
-            results = CC.directory_measure(CYCLO, tmpdir; max_value = 10)
+            results = CC.measure_directory(CYCLO, tmpdir; max_value = 10)
             @test isempty(results)
         end
     end
