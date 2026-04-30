@@ -135,7 +135,8 @@ the type alone, and you can dispatch on it.
 
 ## Cognitive complexity (Campbell / SonarSource)
 
-Cognitive complexity ([G. Ann Campbell, 2023](https://www.sonarsource.com/resources/cognitive-complexity/))
+Cognitive complexity ([G. Ann Campbell, 2023](https://www.sonarsource.com/resources/cognitive-complexity/);
+[white paper PDF](https://www.sonarsource.com/docs/CognitiveComplexity.pdf))
 measures how hard a piece of code is to *understand*, as opposed to how
 many independent paths it has. It increments for breaks in linear flow,
 charges extra for nested flow-break structures, ignores `try` itself but
