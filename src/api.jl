@@ -29,6 +29,7 @@ export
     measure_file,
     measure_directory,
     measure_package,
+    measure_table,
     check_measure,
     measure_check
 
@@ -176,6 +177,36 @@ Run [`measure_directory`](@ref) on a package's `src/` directory. `pkg`
 may be a loaded `Module` or a package name string.
 """
 function measure_package end
+
+"""
+    measure_table([io::IO], result;
+                  sort_by_value=true, rev=true, kwargs...)
+
+Render a `measure_*` result as a flat per-definition table with columns
+`file`, `line`, `function`, and the metric's score (column header taken
+from `metric_label`). Accepts a [`FunctionMeasure`](@ref), a
+[`FileMeasure`](@ref), a `Vector{FunctionMeasure}`, or a
+`Vector{FileMeasure}`. When `io` is omitted, output goes to `stdout`.
+
+Rows are sorted by the metric's score (`sort_by_value=true`) in
+descending order (`rev=true`) by default, so the most complex
+definitions appear at the top. Pass `sort_by_value=false` to keep the
+input order, or `rev=false` to sort ascending. Extra `kwargs...` are
+forwarded to `PrettyTables.pretty_table` (e.g. `backend=:markdown`,
+`crop=:none`).
+
+This verb's methods live in a package extension on
+[`PrettyTables`](https://github.com/ronisbr/PrettyTables.jl); calling it
+without `using PrettyTables` first throws an informative error.
+"""
+function measure_table end
+
+# Fallback so users do not see a generic `MethodError` when the
+# extension has not been loaded.
+measure_table(args...; kwargs...) = error(
+    "measure_table requires PrettyTables.jl. " *
+    "Run `using PrettyTables` to enable the extension.",
+)
 
 """
     check_measure(metric, path_or_pkg;

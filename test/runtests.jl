@@ -8,6 +8,7 @@ using Aqua
     include("argument_counts_tests.jl")
     include("cognitive_complexity_tests.jl")
     include("deprecation_tests.jl")
+    include("pretty_tables_ext_tests.jl")
 end
 
 @testset "Aqua" begin

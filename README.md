@@ -52,7 +52,27 @@ measure_directory(metric, dir; recursive=true, max_value=...)
 measure_package(metric, pkg_or_name; max_value=...)
 measure_check(metric, path_or_pkg; max_value=..., throw_on_violation=true) # exact alias of `check_measure`
 check_measure(metric, path_or_pkg; max_value=..., throw_on_violation=true)
+measure_table([io], result; kwargs...)           # tabulate any of the above (requires PrettyTables)
 ```
+
+## Tabulating results
+
+`measure_table` renders any `measure_*` result (`FunctionMeasure`,
+`FileMeasure`, or vectors of either) as a flat per-definition table
+with columns `file`, `line`, `function`, and the metric's score. The
+methods live in a package extension, so loading
+[PrettyTables.jl](https://github.com/ronisbr/PrettyTables.jl) activates
+them:
+
+```julia
+using CodeComplexity, PrettyTables
+
+measure_table(measure_directory(CognitiveComplexity(), "../julia/base/"))
+```
+
+Extra keyword arguments are forwarded to `PrettyTables.pretty_table`
+(e.g. `backend=:markdown`, `crop=:none`). Calling `measure_table`
+without `using PrettyTables` first throws an informative error.
 
 ## Quick start
 
